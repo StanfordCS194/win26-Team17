@@ -2,3 +2,4 @@
 [Wiki](https://github.com/StanfordCS194/win26-Team17/wiki)
 Laszlo Bollyky
 Marta Vucetic
+Lucia Losada
