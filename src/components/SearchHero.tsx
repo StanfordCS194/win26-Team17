@@ -1,0 +1,132 @@
+import { useState } from "react";
+import { Search, Sparkles, ArrowRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { suggestedProducts } from "@/data/mockData";
+
+interface SearchHeroProps {
+  onSearch: (query: string) => void;
+  isLoading: boolean;
+}
+
+const SearchHero = ({ onSearch, isLoading }: SearchHeroProps) => {
+  const [query, setQuery] = useState("");
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (query.trim()) {
+      onSearch(query.trim());
+    }
+  };
+
+  const handleSuggestionClick = (product: string) => {
+    setQuery(product);
+    onSearch(product);
+  };
+
+  return (
+    <div className="min-h-[85vh] flex flex-col items-center justify-center px-4">
+      <div className="text-center max-w-3xl mx-auto">
+        {/* Badge */}
+        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-accent/10 text-accent text-sm font-medium mb-8 animate-fade-up">
+          <Sparkles className="w-4 h-4" />
+          <span>AI-Powered Product Intelligence</span>
+        </div>
+
+        {/* Headline */}
+        <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-foreground mb-6 leading-tight animate-fade-up animation-delay-100">
+          Understand how users{" "}
+          <span className="text-gradient">really feel</span>
+          <br />
+          about your product
+        </h1>
+
+        {/* Subheadline */}
+        <p className="text-lg md:text-xl text-muted-foreground mb-10 max-w-2xl mx-auto animate-fade-up animation-delay-200">
+          Transform scattered feedback from Reddit, G2, and forums into
+          actionable insights in under 5 minutes. Evidence-backed analysis for
+          confident product decisions.
+        </p>
+
+        {/* Search Form */}
+        <form
+          onSubmit={handleSubmit}
+          className="flex flex-col sm:flex-row gap-3 max-w-xl mx-auto mb-8 animate-fade-up animation-delay-300"
+        >
+          <div className="relative flex-1">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+            <Input
+              type="text"
+              placeholder="Enter a software product name..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="pl-12 h-14 text-base bg-card border-border shadow-md focus:shadow-lg focus:border-accent transition-all"
+              disabled={isLoading}
+            />
+          </div>
+          <Button
+            type="submit"
+            size="lg"
+            disabled={!query.trim() || isLoading}
+            className="h-14 px-8 gradient-accent text-accent-foreground font-semibold shadow-glow hover:opacity-90 transition-opacity"
+          >
+            {isLoading ? (
+              <span className="flex items-center gap-2">
+                <div className="w-5 h-5 border-2 border-accent-foreground/30 border-t-accent-foreground rounded-full animate-spin" />
+                Analyzing...
+              </span>
+            ) : (
+              <span className="flex items-center gap-2">
+                Analyze
+                <ArrowRight className="w-5 h-5" />
+              </span>
+            )}
+          </Button>
+        </form>
+
+        {/* Suggested Products */}
+        <div className="animate-fade-up animation-delay-400">
+          <p className="text-sm text-muted-foreground mb-3">
+            Try it with a popular product:
+          </p>
+          <div className="flex flex-wrap justify-center gap-2">
+            {suggestedProducts.slice(0, 3).map((product) => (
+              <button
+                key={product}
+                onClick={() => handleSuggestionClick(product)}
+                disabled={isLoading}
+                className="px-4 py-2 rounded-lg bg-secondary text-secondary-foreground text-sm font-medium hover:bg-secondary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {product}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="mt-16 grid grid-cols-3 gap-8 md:gap-16 text-center animate-fade-up animation-delay-500">
+        <div>
+          <div className="text-2xl md:text-3xl font-bold text-foreground">
+            2+
+          </div>
+          <div className="text-sm text-muted-foreground">Sources Analyzed</div>
+        </div>
+        <div>
+          <div className="text-2xl md:text-3xl font-bold text-foreground">
+            &lt;5 min
+          </div>
+          <div className="text-sm text-muted-foreground">Time to Insights</div>
+        </div>
+        <div>
+          <div className="text-2xl md:text-3xl font-bold text-foreground">
+            100%
+          </div>
+          <div className="text-sm text-muted-foreground">Evidence-Backed</div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default SearchHero;
