@@ -4,6 +4,7 @@ import { api } from "../../convex/_generated/api";
 import { Search, Sparkles, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import RecentReports from "./RecentReports";
 
 interface SearchHeroProps {
   onSearch: (query: string) => void;
@@ -165,6 +166,9 @@ const SearchHero = ({ onSearch, isLoading }: SearchHeroProps) => {
           <div className="text-sm text-muted-foreground">Evidence-Backed</div>
         </div>
       </div>
+
+      {/* Recent Reports */}
+      <RecentReports onSelect={handleSuggestionClick} isLoading={isLoading} />
     </div>
   );
 };

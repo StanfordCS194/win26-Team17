@@ -72,6 +72,28 @@ export const listProductNames = query({
   },
 });
 
+export const listRecentReports = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 10;
+    const reports = await ctx.db
+      .query("productReports")
+      .order("desc")
+      .collect();
+
+    return reports
+      .filter((r) => r.status === "complete")
+      .slice(0, limit)
+      .map((r) => ({
+        productName: r.productName,
+        overallScore: r.overallScore ?? 50,
+        totalMentions: r.totalMentions ?? 0,
+        generatedAt: r.generatedAt,
+        isExpired: r.generatedAt ? isReportExpired(r.generatedAt) : false,
+      }));
+  },
+});
+
 export const getReportStatus = query({
   args: { reportId: v.id("productReports") },
   handler: async (ctx, args) => {
