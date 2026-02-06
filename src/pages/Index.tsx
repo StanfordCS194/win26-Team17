@@ -6,6 +6,7 @@ import Header from "@/components/Header";
 import SearchHero from "@/components/SearchHero";
 import LoadingState from "@/components/LoadingState";
 import Dashboard from "@/components/Dashboard";
+import ErrorState from "@/components/ErrorState";
 import { ProductReport } from "@/types/report";
 
 type ViewState = "search" | "loading" | "dashboard" | "error";
@@ -132,6 +133,24 @@ const Index = () => {
     }
   };
 
+  const handleRetry = async () => {
+    if (!searchQuery) return;
+
+    setError(null);
+    setView("loading");
+    setIsAnalyzing(true);
+
+    try {
+      const result = await analyzeProduct({ productName: searchQuery });
+      setReportId(result.reportId);
+    } catch (err) {
+      console.error("Retry failed:", err);
+      setError(err instanceof Error ? err.message : "Failed to analyze product. Please try again.");
+      setView("error");
+      setIsAnalyzing(false);
+    }
+  };
+
   // Convert Convex report to ProductReport type (handle optional fields)
   const toProductReport = (r: NonNullable<typeof report>): ProductReport => ({
     productName: r.productName,
@@ -170,22 +189,13 @@ const Index = () => {
       )}
 
       {view === "error" && (
-        <div className="min-h-[70vh] flex flex-col items-center justify-center px-4">
-          <div className="text-center max-w-md">
-            <h2 className="text-2xl font-bold text-foreground mb-3">
-              Something went wrong
-            </h2>
-            <p className="text-muted-foreground mb-6">
-              {error || "We couldn't analyze this product. Please try again."}
-            </p>
-            <button
-              onClick={handleBack}
-              className="px-6 py-3 rounded-lg bg-accent text-accent-foreground font-semibold hover:opacity-90 transition-opacity"
-            >
-              Try again
-            </button>
-          </div>
-        </div>
+        <ErrorState
+          error={error}
+          productName={searchQuery}
+          onRetry={handleRetry}
+          onBack={handleBack}
+          isRetrying={isAnalyzing}
+        />
       )}
     </div>
   );
