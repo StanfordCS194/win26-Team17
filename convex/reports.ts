@@ -3,6 +3,44 @@ import { v } from "convex/values";
 import { api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 
+// ============================================================================
+// Validation
+// ============================================================================
+
+const MIN_PRODUCT_NAME_LENGTH = 2;
+const MAX_PRODUCT_NAME_LENGTH = 100;
+const REPORT_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+function validateProductName(name: string): { valid: boolean; error?: string; normalized?: string } {
+  const trimmed = name.trim();
+
+  if (trimmed.length < MIN_PRODUCT_NAME_LENGTH) {
+    return { valid: false, error: `Product name must be at least ${MIN_PRODUCT_NAME_LENGTH} characters` };
+  }
+
+  if (trimmed.length > MAX_PRODUCT_NAME_LENGTH) {
+    return { valid: false, error: `Product name must be less than ${MAX_PRODUCT_NAME_LENGTH} characters` };
+  }
+
+  // Remove potentially dangerous characters but allow common product name chars
+  const sanitized = trimmed.replace(/[<>{}[\]\\]/g, "").trim();
+
+  if (sanitized.length === 0) {
+    return { valid: false, error: "Product name contains invalid characters" };
+  }
+
+  return { valid: true, normalized: sanitized };
+}
+
+function isReportExpired(generatedAt: string): boolean {
+  const generatedTime = new Date(generatedAt).getTime();
+  return Date.now() - generatedTime > REPORT_EXPIRY_MS;
+}
+
+// ============================================================================
+// Queries
+// ============================================================================
+
 export const getByProductName = query({
   args: { productName: v.string() },
   handler: async (ctx, args) => {
@@ -77,27 +115,94 @@ export const createPendingReport = mutation({
   },
 });
 
+// ============================================================================
+// Actions
+// ============================================================================
+
 // Action that creates report and triggers pipeline
 export const analyzeProduct = action({
-  args: { productName: v.string() },
-  handler: async (ctx, args): Promise<{ reportId: Id<"productReports"> }> => {
-    // Create pending report
+  args: {
+    productName: v.string(),
+    forceRefresh: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args): Promise<{ reportId: Id<"productReports">; error?: string }> => {
+    // Validate input
+    const validation = validateProductName(args.productName);
+    if (!validation.valid) {
+      throw new Error(validation.error);
+    }
+
+    const normalizedName = validation.normalized!;
+
+    // Check for existing report
     const result = await ctx.runMutation(
       api.reports.createPendingReport,
-      { productName: args.productName }
+      { productName: normalizedName }
     );
 
     const reportId = result.reportId as Id<"productReports">;
 
+    // If forcing refresh and report exists, delete and recreate
+    if (args.forceRefresh && result.existing) {
+      await ctx.runMutation(api.reports.deleteReport, { reportId });
+      const newResult = await ctx.runMutation(
+        api.reports.createPendingReport,
+        { productName: normalizedName }
+      );
+      const newReportId = newResult.reportId as Id<"productReports">;
+
+      await ctx.scheduler.runAfter(0, api.pipeline.generateReport, {
+        reportId: newReportId,
+        productName: normalizedName,
+      });
+
+      return { reportId: newReportId };
+    }
+
     // If it's a new report, trigger the pipeline
     if (!result.existing) {
-      // Run pipeline in background (don't await)
       await ctx.scheduler.runAfter(0, api.pipeline.generateReport, {
         reportId,
-        productName: args.productName,
+        productName: normalizedName,
       });
     }
 
     return { reportId };
+  },
+});
+
+// Delete a report (for refresh functionality)
+export const deleteReport = mutation({
+  args: { reportId: v.id("productReports") },
+  handler: async (ctx, args) => {
+    await ctx.db.delete(args.reportId);
+  },
+});
+
+// Get report with expiration info
+export const getReportWithMeta = query({
+  args: { productName: v.string() },
+  handler: async (ctx, args) => {
+    const validation = validateProductName(args.productName);
+    if (!validation.valid) {
+      return null;
+    }
+
+    const normalizedName = validation.normalized!.toLowerCase();
+    const reports = await ctx.db
+      .query("productReports")
+      .withIndex("by_productName")
+      .collect();
+
+    const report = reports.find(
+      (r) => r.productName.toLowerCase().trim() === normalizedName
+    );
+
+    if (!report) return null;
+
+    return {
+      ...report,
+      isExpired: report.generatedAt ? isReportExpired(report.generatedAt) : false,
+    };
   },
 });
