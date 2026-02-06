@@ -1,4 +1,4 @@
-import { AspectScore as AspectScoreType } from "@/data/mockData";
+import { AspectScore as AspectScoreType } from "@/types/report";
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { cn } from "@/lib/utils";
 

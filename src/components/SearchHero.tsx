@@ -1,8 +1,9 @@
 import { useState } from "react";
+import { useQuery } from "convex/react";
+import { api } from "../../convex/_generated/api";
 import { Search, Sparkles, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { suggestedProducts } from "@/data/mockData";
 
 interface SearchHeroProps {
   onSearch: (query: string) => void;
@@ -11,6 +12,7 @@ interface SearchHeroProps {
 
 const SearchHero = ({ onSearch, isLoading }: SearchHeroProps) => {
   const [query, setQuery] = useState("");
+  const suggestedProducts = useQuery(api.reports.listProductNames) ?? [];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,23 +87,25 @@ const SearchHero = ({ onSearch, isLoading }: SearchHeroProps) => {
         </form>
 
         {/* Suggested Products */}
-        <div className="animate-fade-up animation-delay-400">
-          <p className="text-sm text-muted-foreground mb-3">
-            Try it with a popular product:
-          </p>
-          <div className="flex flex-wrap justify-center gap-2">
-            {suggestedProducts.slice(0, 3).map((product) => (
-              <button
-                key={product}
-                onClick={() => handleSuggestionClick(product)}
-                disabled={isLoading}
-                className="px-4 py-2 rounded-lg bg-secondary text-secondary-foreground text-sm font-medium hover:bg-secondary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {product}
-              </button>
-            ))}
+        {suggestedProducts.length > 0 && (
+          <div className="animate-fade-up animation-delay-400">
+            <p className="text-sm text-muted-foreground mb-3">
+              Try it with a popular product:
+            </p>
+            <div className="flex flex-wrap justify-center gap-2">
+              {suggestedProducts.slice(0, 3).map((product) => (
+                <button
+                  key={product}
+                  onClick={() => handleSuggestionClick(product)}
+                  disabled={isLoading}
+                  className="px-4 py-2 rounded-lg bg-secondary text-secondary-foreground text-sm font-medium hover:bg-secondary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {product}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Stats */}
