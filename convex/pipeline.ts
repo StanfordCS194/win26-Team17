@@ -1,7 +1,7 @@
 import { action, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { RedditClient, RedditComment, RedditPost } from "./services/reddit";
+import { RedditClient, RedditComment, RedditPost, searchSoftwareProduct } from "./services/reddit";
 import { createGeminiClient } from "./services/gemini";
 
 // ============================================================================
@@ -261,9 +261,9 @@ export const generateReport = action({
         status: "fetching",
       });
 
-      // Fetch Reddit data
+      // Fetch Reddit data with software-focused search
       const reddit = new RedditClient({ cacheTtlMs: 60000 });
-      const results = await reddit.searchWithComments(productName, {
+      const results = await searchSoftwareProduct(reddit, productName, {
         postLimit: 10,
         commentsPerPost: 20,
       });
