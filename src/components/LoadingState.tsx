@@ -1,51 +1,20 @@
-import { useEffect, useState } from "react";
-import { Activity, Search, FileText, BarChart3, CheckCircle2 } from "lucide-react";
+import { Activity, Search, BarChart3, CheckCircle2, FileText } from "lucide-react";
 
 interface LoadingStateProps {
   productName: string;
+  status?: "pending" | "fetching" | "analyzing" | "complete" | "error";
 }
 
 const steps = [
-  { icon: Search, label: "Searching Reddit discussions...", duration: 1200 },
-  { icon: FileText, label: "Analyzing G2 reviews...", duration: 1500 },
-  { icon: BarChart3, label: "Computing sentiment scores...", duration: 1000 },
-  { icon: CheckCircle2, label: "Generating insights report...", duration: 800 },
+  { id: "pending", icon: Search, label: "Starting analysis..." },
+  { id: "fetching", icon: FileText, label: "Fetching Reddit discussions..." },
+  { id: "analyzing", icon: BarChart3, label: "Analyzing sentiment..." },
+  { id: "complete", icon: CheckCircle2, label: "Generating report..." },
 ];
 
-const LoadingState = ({ productName }: LoadingStateProps) => {
-  const [currentStep, setCurrentStep] = useState(0);
-  const [progress, setProgress] = useState(0);
-
-  useEffect(() => {
-    let stepIndex = 0;
-    let progressInterval: NodeJS.Timeout;
-
-    const advanceStep = () => {
-      if (stepIndex < steps.length - 1) {
-        stepIndex++;
-        setCurrentStep(stepIndex);
-      }
-    };
-
-    // Progress animation
-    progressInterval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) return 100;
-        return prev + 2;
-      });
-    }, 80);
-
-    // Step transitions
-    const timers = steps.slice(0, -1).map((step, index) => {
-      const delay = steps.slice(0, index + 1).reduce((acc, s) => acc + s.duration, 0);
-      return setTimeout(advanceStep, delay);
-    });
-
-    return () => {
-      clearInterval(progressInterval);
-      timers.forEach(clearTimeout);
-    };
-  }, []);
+const LoadingState = ({ productName, status = "pending" }: LoadingStateProps) => {
+  const currentStepIndex = steps.findIndex((s) => s.id === status);
+  const progress = Math.max(10, ((currentStepIndex + 1) / steps.length) * 100);
 
   return (
     <div className="min-h-[70vh] flex flex-col items-center justify-center px-4">
@@ -63,19 +32,19 @@ const LoadingState = ({ productName }: LoadingStateProps) => {
           Analyzing {productName}
         </h2>
         <p className="text-muted-foreground mb-8">
-          Gathering feedback from multiple sources...
+          Gathering feedback from Reddit...
         </p>
 
         {/* Steps */}
         <div className="space-y-4 mb-8">
           {steps.map((step, index) => {
             const Icon = step.icon;
-            const isActive = index === currentStep;
-            const isComplete = index < currentStep;
+            const isActive = step.id === status;
+            const isComplete = index < currentStepIndex;
 
             return (
               <div
-                key={index}
+                key={step.id}
                 className={`flex items-center gap-3 p-3 rounded-lg transition-all duration-300 ${
                   isActive
                     ? "bg-accent/10 text-foreground"
@@ -108,11 +77,13 @@ const LoadingState = ({ productName }: LoadingStateProps) => {
         {/* Progress Bar */}
         <div className="w-full bg-secondary rounded-full h-2 overflow-hidden">
           <div
-            className="h-full gradient-accent transition-all duration-200 ease-out"
+            className="h-full gradient-accent transition-all duration-500 ease-out"
             style={{ width: `${progress}%` }}
           />
         </div>
-        <p className="text-sm text-muted-foreground mt-2">{Math.round(progress)}% complete</p>
+        <p className="text-sm text-muted-foreground mt-2">
+          This may take 30-60 seconds
+        </p>
       </div>
     </div>
   );

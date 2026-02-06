@@ -1,67 +1,125 @@
-import { useState } from "react";
-import { useQuery } from "convex/react";
+import { useState, useEffect } from "react";
+import { useQuery, useAction } from "convex/react";
 import { api } from "../../convex/_generated/api";
+import { Id } from "../../convex/_generated/dataModel";
 import Header from "@/components/Header";
 import SearchHero from "@/components/SearchHero";
 import LoadingState from "@/components/LoadingState";
 import Dashboard from "@/components/Dashboard";
 import { ProductReport } from "@/types/report";
 
-type ViewState = "search" | "loading" | "dashboard";
+type ViewState = "search" | "loading" | "dashboard" | "error";
 
 const Index = () => {
   const [view, setView] = useState<ViewState>("search");
   const [searchQuery, setSearchQuery] = useState("");
+  const [reportId, setReportId] = useState<Id<"productReports"> | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
+  const analyzeProduct = useAction(api.reports.analyzeProduct);
+
+  // Query for the report by product name
   const report = useQuery(
     api.reports.getByProductName,
     searchQuery ? { productName: searchQuery } : "skip"
   );
 
-  const handleSearch = (query: string) => {
-    setSearchQuery(query);
-    setView("loading");
-  };
+  // Handle status changes
+  useEffect(() => {
+    if (view !== "loading") return;
 
-  // Transition from loading → dashboard once the query resolves
-  if (view === "loading" && report !== undefined) {
-    setView("dashboard");
-  }
+    if (report === undefined) {
+      // Still loading from Convex
+      return;
+    }
+
+    if (report === null) {
+      // No report found (shouldn't happen if pipeline started)
+      return;
+    }
+
+    if (report.status === "complete") {
+      setView("dashboard");
+      setIsAnalyzing(false);
+    } else if (report.status === "error") {
+      setView("error");
+      setError(report.errorMessage || "An error occurred");
+      setIsAnalyzing(false);
+    }
+    // If pending/fetching/analyzing, stay in loading view
+  }, [report, view]);
+
+  const handleSearch = async (query: string) => {
+    setSearchQuery(query);
+    setError(null);
+    setView("loading");
+    setIsAnalyzing(true);
+
+    try {
+      const result = await analyzeProduct({ productName: query });
+      setReportId(result.reportId);
+    } catch (err) {
+      console.error("Failed to start analysis:", err);
+      setError("Failed to start analysis. Please try again.");
+      setView("error");
+      setIsAnalyzing(false);
+    }
+  };
 
   const handleBack = () => {
     setView("search");
     setSearchQuery("");
+    setReportId(null);
+    setError(null);
   };
+
+  // Convert Convex report to ProductReport type (handle optional fields)
+  const toProductReport = (r: NonNullable<typeof report>): ProductReport => ({
+    productName: r.productName,
+    overallScore: r.overallScore ?? 50,
+    totalMentions: r.totalMentions ?? 0,
+    sourcesAnalyzed: r.sourcesAnalyzed ?? 1,
+    generatedAt: r.generatedAt,
+    summary: r.summary ?? "Analysis in progress...",
+    strengths: r.strengths ?? [],
+    issues: r.issues ?? [],
+    aspects: r.aspects ?? [],
+  });
 
   return (
     <div className="min-h-screen bg-background">
       <Header />
 
       {view === "search" && (
-        <SearchHero onSearch={handleSearch} isLoading={false} />
+        <SearchHero onSearch={handleSearch} isLoading={isAnalyzing} />
       )}
 
-      {view === "loading" && <LoadingState productName={searchQuery} />}
-
-      {view === "dashboard" && report && (
-        <Dashboard report={report as ProductReport} onBack={handleBack} />
+      {view === "loading" && (
+        <LoadingState
+          productName={searchQuery}
+          status={report?.status}
+        />
       )}
 
-      {view === "dashboard" && !report && (
+      {view === "dashboard" && report && report.status === "complete" && (
+        <Dashboard report={toProductReport(report)} onBack={handleBack} />
+      )}
+
+      {view === "error" && (
         <div className="min-h-[70vh] flex flex-col items-center justify-center px-4">
           <div className="text-center max-w-md">
             <h2 className="text-2xl font-bold text-foreground mb-3">
-              No report found
+              Something went wrong
             </h2>
             <p className="text-muted-foreground mb-6">
-              We don't have a report for "{searchQuery}" yet. Check back later or
-              try a different product.
+              {error || "We couldn't analyze this product. Please try again."}
             </p>
             <button
               onClick={handleBack}
               className="px-6 py-3 rounded-lg bg-accent text-accent-foreground font-semibold hover:opacity-90 transition-opacity"
             >
-              Search again
+              Try again
             </button>
           </div>
         </div>

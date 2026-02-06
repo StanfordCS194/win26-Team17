@@ -26,13 +26,21 @@ const aspectScoreValidator = v.object({
 export default defineSchema({
   productReports: defineTable({
     productName: v.string(),
-    overallScore: v.number(),
-    totalMentions: v.number(),
-    sourcesAnalyzed: v.number(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("fetching"),
+      v.literal("analyzing"),
+      v.literal("complete"),
+      v.literal("error")
+    ),
+    overallScore: v.optional(v.number()),
+    totalMentions: v.optional(v.number()),
+    sourcesAnalyzed: v.optional(v.number()),
     generatedAt: v.string(),
-    summary: v.string(),
-    strengths: v.array(insightValidator),
-    issues: v.array(insightValidator),
-    aspects: v.array(aspectScoreValidator),
+    summary: v.optional(v.string()),
+    strengths: v.optional(v.array(insightValidator)),
+    issues: v.optional(v.array(insightValidator)),
+    aspects: v.optional(v.array(aspectScoreValidator)),
+    errorMessage: v.optional(v.string()),
   }).index("by_productName", ["productName"]),
 });
