@@ -1,8 +1,9 @@
+import { useState } from "react";
 import { ProductReport } from "@/types/report";
 import ScoreGauge from "./ScoreGauge";
 import InsightCard from "./InsightCard";
 import AspectScoreCard from "./AspectScore";
-import { ArrowLeft, Calendar, Database, FileText, RefreshCw } from "lucide-react";
+import { ArrowLeft, Calendar, Database, FileText, RefreshCw, Share2, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface DashboardProps {
@@ -13,9 +14,30 @@ interface DashboardProps {
 }
 
 const Dashboard = ({ report, onBack, onRefresh, isRefreshing }: DashboardProps) => {
+  const [copied, setCopied] = useState(false);
+
   // Check if report is older than 24 hours
   const reportAge = Date.now() - new Date(report.generatedAt).getTime();
   const isStale = reportAge > 24 * 60 * 60 * 1000;
+
+  const handleShare = async () => {
+    const url = `${window.location.origin}?product=${encodeURIComponent(report.productName)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback for older browsers
+      const textArea = document.createElement("textarea");
+      textArea.value = url;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textArea);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
 
   return (
     <div className="min-h-screen pt-24 pb-16 px-4">
@@ -31,17 +53,37 @@ const Dashboard = ({ report, onBack, onRefresh, isRefreshing }: DashboardProps) 
             Analyze another product
           </Button>
 
-          {onRefresh && (
+          <div className="flex items-center gap-2">
             <Button
               variant="outline"
-              onClick={onRefresh}
-              disabled={isRefreshing}
-              className={isStale ? "border-amber-500 text-amber-600 hover:bg-amber-50" : ""}
+              onClick={handleShare}
+              className="text-muted-foreground"
             >
-              <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? "animate-spin" : ""}`} />
-              {isRefreshing ? "Refreshing..." : isStale ? "Refresh (stale)" : "Refresh"}
+              {copied ? (
+                <>
+                  <Check className="w-4 h-4 mr-2 text-green-600" />
+                  Copied!
+                </>
+              ) : (
+                <>
+                  <Share2 className="w-4 h-4 mr-2" />
+                  Share
+                </>
+              )}
             </Button>
-          )}
+
+            {onRefresh && (
+              <Button
+                variant="outline"
+                onClick={onRefresh}
+                disabled={isRefreshing}
+                className={isStale ? "border-amber-500 text-amber-600 hover:bg-amber-50" : ""}
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? "animate-spin" : ""}`} />
+                {isRefreshing ? "Refreshing..." : isStale ? "Refresh (stale)" : "Refresh"}
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Header Section */}

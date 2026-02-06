@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useQuery, useAction } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
@@ -16,8 +16,36 @@ const Index = () => {
   const [reportId, setReportId] = useState<Id<"productReports"> | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
 
   const analyzeProduct = useAction(api.reports.analyzeProduct);
+
+  // Check for product in URL on mount
+  useEffect(() => {
+    if (initialLoadDone) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const productParam = params.get("product");
+
+    if (productParam) {
+      setSearchQuery(productParam);
+      setView("loading");
+      setIsAnalyzing(true);
+
+      analyzeProduct({ productName: productParam })
+        .then((result) => {
+          setReportId(result.reportId);
+        })
+        .catch((err) => {
+          console.error("Failed to load product from URL:", err);
+          setError("Failed to load product. Please try again.");
+          setView("error");
+          setIsAnalyzing(false);
+        });
+    }
+
+    setInitialLoadDone(true);
+  }, [initialLoadDone, analyzeProduct]);
 
   // Query for the report by product name
   const report = useQuery(
@@ -67,12 +95,24 @@ const Index = () => {
     }
   };
 
-  const handleBack = () => {
+  const handleBack = useCallback(() => {
     setView("search");
     setSearchQuery("");
     setReportId(null);
     setError(null);
-  };
+  }, []);
+
+  // Escape key to go back
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && (view === "dashboard" || view === "error")) {
+        handleBack();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [view, handleBack]);
 
   const handleRefresh = async () => {
     if (!searchQuery) return;

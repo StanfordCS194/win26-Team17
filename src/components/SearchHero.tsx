@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Search, Sparkles, ArrowRight } from "lucide-react";
@@ -17,7 +17,13 @@ const MAX_LENGTH = 100;
 const SearchHero = ({ onSearch, isLoading }: SearchHeroProps) => {
   const [query, setQuery] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const suggestedProducts = useQuery(api.reports.listProductNames) ?? [];
+
+  // Auto-focus search input on mount
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
 
   const validateQuery = (value: string): string | null => {
     const trimmed = value.trim();
@@ -85,6 +91,7 @@ const SearchHero = ({ onSearch, isLoading }: SearchHeroProps) => {
           <div className="relative flex-1">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
             <Input
+              ref={inputRef}
               type="text"
               placeholder="Enter a software product name..."
               value={query}
