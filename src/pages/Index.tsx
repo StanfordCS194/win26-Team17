@@ -74,6 +74,24 @@ const Index = () => {
     setError(null);
   };
 
+  const handleRefresh = async () => {
+    if (!searchQuery) return;
+
+    setError(null);
+    setView("loading");
+    setIsAnalyzing(true);
+
+    try {
+      const result = await analyzeProduct({ productName: searchQuery, forceRefresh: true });
+      setReportId(result.reportId);
+    } catch (err) {
+      console.error("Failed to refresh analysis:", err);
+      setError("Failed to refresh analysis. Please try again.");
+      setView("error");
+      setIsAnalyzing(false);
+    }
+  };
+
   // Convert Convex report to ProductReport type (handle optional fields)
   const toProductReport = (r: NonNullable<typeof report>): ProductReport => ({
     productName: r.productName,
@@ -103,7 +121,12 @@ const Index = () => {
       )}
 
       {view === "dashboard" && report && report.status === "complete" && (
-        <Dashboard report={toProductReport(report)} onBack={handleBack} />
+        <Dashboard
+          report={toProductReport(report)}
+          onBack={handleBack}
+          onRefresh={handleRefresh}
+          isRefreshing={isAnalyzing}
+        />
       )}
 
       {view === "error" && (

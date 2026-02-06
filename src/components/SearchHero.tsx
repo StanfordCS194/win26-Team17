@@ -10,13 +10,39 @@ interface SearchHeroProps {
   isLoading: boolean;
 }
 
+const MIN_LENGTH = 2;
+const MAX_LENGTH = 100;
+
 const SearchHero = ({ onSearch, isLoading }: SearchHeroProps) => {
   const [query, setQuery] = useState("");
+  const [validationError, setValidationError] = useState<string | null>(null);
   const suggestedProducts = useQuery(api.reports.listProductNames) ?? [];
+
+  const validateQuery = (value: string): string | null => {
+    const trimmed = value.trim();
+    if (trimmed.length > 0 && trimmed.length < MIN_LENGTH) {
+      return `Product name must be at least ${MIN_LENGTH} characters`;
+    }
+    if (trimmed.length > MAX_LENGTH) {
+      return `Product name must be less than ${MAX_LENGTH} characters`;
+    }
+    return null;
+  };
+
+  const handleQueryChange = (value: string) => {
+    setQuery(value);
+    setValidationError(validateQuery(value));
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const error = validateQuery(query);
+    if (error) {
+      setValidationError(error);
+      return;
+    }
     if (query.trim()) {
+      setValidationError(null);
       onSearch(query.trim());
     }
   };
@@ -61,15 +87,25 @@ const SearchHero = ({ onSearch, isLoading }: SearchHeroProps) => {
               type="text"
               placeholder="Enter a software product name..."
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="pl-12 h-14 text-base bg-card border-border shadow-md focus:shadow-lg focus:border-accent transition-all"
+              onChange={(e) => handleQueryChange(e.target.value)}
+              className={`pl-12 h-14 text-base bg-card shadow-md focus:shadow-lg transition-all ${
+                validationError
+                  ? "border-red-500 focus:border-red-500"
+                  : "border-border focus:border-accent"
+              }`}
               disabled={isLoading}
+              maxLength={MAX_LENGTH + 10}
             />
+            {validationError && (
+              <p className="absolute -bottom-6 left-0 text-sm text-red-500">
+                {validationError}
+              </p>
+            )}
           </div>
           <Button
             type="submit"
             size="lg"
-            disabled={!query.trim() || isLoading}
+            disabled={!query.trim() || isLoading || !!validationError}
             className="h-14 px-8 gradient-accent text-accent-foreground font-semibold shadow-glow hover:opacity-90 transition-opacity"
           >
             {isLoading ? (

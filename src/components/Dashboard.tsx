@@ -2,27 +2,47 @@ import { ProductReport } from "@/types/report";
 import ScoreGauge from "./ScoreGauge";
 import InsightCard from "./InsightCard";
 import AspectScoreCard from "./AspectScore";
-import { ArrowLeft, Calendar, Database, FileText } from "lucide-react";
+import { ArrowLeft, Calendar, Database, FileText, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface DashboardProps {
   report: ProductReport;
   onBack: () => void;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
 }
 
-const Dashboard = ({ report, onBack }: DashboardProps) => {
+const Dashboard = ({ report, onBack, onRefresh, isRefreshing }: DashboardProps) => {
+  // Check if report is older than 24 hours
+  const reportAge = Date.now() - new Date(report.generatedAt).getTime();
+  const isStale = reportAge > 24 * 60 * 60 * 1000;
+
   return (
     <div className="min-h-screen pt-24 pb-16 px-4">
       <div className="container mx-auto max-w-6xl">
-        {/* Back Button */}
-        <Button
-          variant="ghost"
-          onClick={onBack}
-          className="mb-6 text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Analyze another product
-        </Button>
+        {/* Navigation */}
+        <div className="flex items-center justify-between mb-6">
+          <Button
+            variant="ghost"
+            onClick={onBack}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Analyze another product
+          </Button>
+
+          {onRefresh && (
+            <Button
+              variant="outline"
+              onClick={onRefresh}
+              disabled={isRefreshing}
+              className={isStale ? "border-amber-500 text-amber-600 hover:bg-amber-50" : ""}
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? "animate-spin" : ""}`} />
+              {isRefreshing ? "Refreshing..." : isStale ? "Refresh (stale)" : "Refresh"}
+            </Button>
+          )}
+        </div>
 
         {/* Header Section */}
         <div className="bg-card rounded-2xl border border-border p-8 mb-8 animate-fade-up">
