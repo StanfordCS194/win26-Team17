@@ -47,6 +47,33 @@ This project is built with:
 - React
 - shadcn-ui
 - Tailwind CSS
+- Convex (backend)
+- Gemini API (AI analysis)
+
+## Environment Setup
+
+### Convex Backend
+
+The backend runs on Convex. To set up:
+
+```sh
+# Install dependencies
+npm install
+
+# Start Convex dev server (creates .env.local automatically)
+npx convex dev
+```
+
+### Gemini API Key
+
+For AI-powered sentiment analysis, set the Gemini API key:
+
+```sh
+# Get a free API key from https://aistudio.google.com/apikey
+npx convex env set GEMINI_API_KEY "your-api-key-here"
+```
+
+Without a Gemini key, the app falls back to basic keyword-based analysis.
 
 ## How can I deploy this project?
 
