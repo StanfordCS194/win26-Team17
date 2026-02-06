@@ -59,7 +59,7 @@ export class GeminiClient {
 
   constructor(config: GeminiConfig) {
     this.apiKey = config.apiKey;
-    this.model = config.model || "gemini-1.5-flash";
+    this.model = config.model || "gemini-1.5-flash-latest";
   }
 
   private async generate(prompt: string): Promise<string> {
