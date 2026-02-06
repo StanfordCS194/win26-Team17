@@ -78,7 +78,7 @@ export class GeminiClient {
         ],
         generationConfig: {
           temperature: 0.3,
-          maxOutputTokens: 4096,
+          maxOutputTokens: 8192,
         },
       }),
     });
@@ -135,12 +135,10 @@ export class GeminiClient {
     }
 
     // Prepare mentions for the prompt (limit to avoid token limits)
-    const limitedMentions = mentions.slice(0, 50).map((m, i) => ({
+    const limitedMentions = mentions.slice(0, 30).map((m, i) => ({
       id: i,
-      text: m.text.slice(0, 400),
+      text: m.text.slice(0, 300),
       author: m.author,
-      date: m.date,
-      url: m.url,
       sentiment: m.isPositive ? "positive" : "negative",
     }));
 
@@ -201,13 +199,12 @@ Rules:
       frequency: insight.mentionIds?.length || 0,
       quotes: (insight.mentionIds || [])
         .slice(0, 5)
-        .map((id) => mentionMap.get(id))
-        .filter((m): m is NonNullable<typeof m> => m !== undefined)
-        .map((m) => ({
-          text: mentions[m.id]?.text || m.text,
-          author: m.author,
-          date: m.date,
-          url: m.url,
+        .filter((id) => id < mentions.length)
+        .map((id) => ({
+          text: mentions[id]?.text || "",
+          author: mentions[id]?.author || "Unknown",
+          date: mentions[id]?.date || "",
+          url: mentions[id]?.url || "",
         })),
     });
 
