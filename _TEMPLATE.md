@@ -21,7 +21,7 @@
 #### [Sub-component or Related System]
 
     [Additional business logic as needed. Each subsection should be independently understandable.]
-
+ 
 #### Rules & Edge Cases
 
 - [Constraint or rule]

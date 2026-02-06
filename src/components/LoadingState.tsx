@@ -6,10 +6,10 @@ interface LoadingStateProps {
 }
 
 const steps = [
-  { icon: Search, label: "Searching Reddit discussions...", duration: 1200 },
-  { icon: FileText, label: "Analyzing G2 reviews...", duration: 1500 },
-  { icon: BarChart3, label: "Computing sentiment scores...", duration: 1000 },
-  { icon: CheckCircle2, label: "Generating insights report...", duration: 800 },
+  { icon: Search, label: "Searching Reddit discussions...", duration: 8000 },
+  { icon: FileText, label: "Reading posts and comments...", duration: 7000 },
+  { icon: BarChart3, label: "Computing sentiment scores...", duration: 7000 },
+  { icon: CheckCircle2, label: "Generating insights report...", duration: 8000 },
 ];
 
 const LoadingState = ({ productName }: LoadingStateProps) => {
@@ -27,13 +27,13 @@ const LoadingState = ({ productName }: LoadingStateProps) => {
       }
     };
 
-    // Progress animation
+    // Progress animation — cap at 90% so real completion triggers 100%
     progressInterval = setInterval(() => {
       setProgress((prev) => {
-        if (prev >= 100) return 100;
-        return prev + 2;
+        if (prev >= 90) return 90;
+        return prev + 0.6;
       });
-    }, 80);
+    }, 200);
 
     // Step transitions
     const timers = steps.slice(0, -1).map((step, index) => {
@@ -63,7 +63,7 @@ const LoadingState = ({ productName }: LoadingStateProps) => {
           Analyzing {productName}
         </h2>
         <p className="text-muted-foreground mb-8">
-          Gathering feedback from multiple sources...
+          Gathering feedback from Reddit...
         </p>
 
         {/* Steps */}

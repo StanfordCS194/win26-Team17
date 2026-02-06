@@ -8,6 +8,9 @@
  * @module
  */
 
+import type * as analyze from "../analyze.js";
+import type * as pipeline from "../pipeline.js";
+import type * as reddit from "../reddit.js";
 import type * as reports from "../reports.js";
 
 import type {
@@ -17,6 +20,9 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  analyze: typeof analyze;
+  pipeline: typeof pipeline;
+  reddit: typeof reddit;
   reports: typeof reports;
 }>;
 

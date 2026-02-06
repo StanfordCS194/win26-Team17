@@ -1,29 +1,31 @@
 import { useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { Search, Sparkles, ArrowRight } from "lucide-react";
+import { Search, Sparkles, ArrowRight, Tag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 interface SearchHeroProps {
-  onSearch: (query: string) => void;
+  onSearch: (productName: string, brandName: string) => void;
   isLoading: boolean;
 }
 
 const SearchHero = ({ onSearch, isLoading }: SearchHeroProps) => {
-  const [query, setQuery] = useState("");
+  const [productName, setProductName] = useState("");
+  const [brandName, setBrandName] = useState("");
   const suggestedProducts = useQuery(api.reports.listProductNames) ?? [];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (query.trim()) {
-      onSearch(query.trim());
+    if (productName.trim() && brandName.trim()) {
+      onSearch(productName.trim(), brandName.trim());
     }
   };
 
   const handleSuggestionClick = (product: string) => {
-    setQuery(product);
-    onSearch(product);
+    setProductName(product);
+    // For suggestions (cached reports), use product name as both
+    onSearch(product, product);
   };
 
   return (
@@ -45,7 +47,7 @@ const SearchHero = ({ onSearch, isLoading }: SearchHeroProps) => {
 
         {/* Subheadline */}
         <p className="text-lg md:text-xl text-muted-foreground mb-10 max-w-2xl mx-auto animate-fade-up animation-delay-200">
-          Transform scattered feedback from Reddit, G2, and forums into
+          Transform scattered feedback from Reddit into
           actionable insights in under 5 minutes. Evidence-backed analysis for
           confident product decisions.
         </p>
@@ -59,9 +61,20 @@ const SearchHero = ({ onSearch, isLoading }: SearchHeroProps) => {
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
             <Input
               type="text"
-              placeholder="Enter a software product name..."
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Product name (e.g., AirPods Pro)"
+              value={productName}
+              onChange={(e) => setProductName(e.target.value)}
+              className="pl-12 h-14 text-base bg-card border-border shadow-md focus:shadow-lg focus:border-accent transition-all"
+              disabled={isLoading}
+            />
+          </div>
+          <div className="relative flex-1 sm:max-w-[180px]">
+            <Tag className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+            <Input
+              type="text"
+              placeholder="Brand (e.g., Apple)"
+              value={brandName}
+              onChange={(e) => setBrandName(e.target.value)}
               className="pl-12 h-14 text-base bg-card border-border shadow-md focus:shadow-lg focus:border-accent transition-all"
               disabled={isLoading}
             />
@@ -69,7 +82,7 @@ const SearchHero = ({ onSearch, isLoading }: SearchHeroProps) => {
           <Button
             type="submit"
             size="lg"
-            disabled={!query.trim() || isLoading}
+            disabled={!productName.trim() || !brandName.trim() || isLoading}
             className="h-14 px-8 gradient-accent text-accent-foreground font-semibold shadow-glow hover:opacity-90 transition-opacity"
           >
             {isLoading ? (
@@ -112,13 +125,13 @@ const SearchHero = ({ onSearch, isLoading }: SearchHeroProps) => {
       <div className="mt-16 grid grid-cols-3 gap-8 md:gap-16 text-center animate-fade-up animation-delay-500">
         <div>
           <div className="text-2xl md:text-3xl font-bold text-foreground">
-            2+
+            Reddit
           </div>
-          <div className="text-sm text-muted-foreground">Sources Analyzed</div>
+          <div className="text-sm text-muted-foreground">Source Analyzed</div>
         </div>
         <div>
           <div className="text-2xl md:text-3xl font-bold text-foreground">
-            &lt;5 min
+            &lt;1 min
           </div>
           <div className="text-sm text-muted-foreground">Time to Insights</div>
         </div>

@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { useQuery } from "convex/react";
+import { useQuery, useAction } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import Header from "@/components/Header";
 import SearchHero from "@/components/SearchHero";
 import LoadingState from "@/components/LoadingState";
 import Dashboard from "@/components/Dashboard";
 import { ProductReport } from "@/types/report";
+import { toast } from "sonner";
 
 type ViewState = "search" | "loading" | "dashboard";
 
@@ -18,13 +19,23 @@ const Index = () => {
     searchQuery ? { productName: searchQuery } : "skip"
   );
 
-  const handleSearch = (query: string) => {
-    setSearchQuery(query);
+  const runPipeline = useAction(api.pipeline.analyzeProduct);
+
+  const handleSearch = async (productName: string, brandName: string) => {
+    setSearchQuery(productName);
     setView("loading");
+
+    try {
+      await runPipeline({ productName, brandName });
+    } catch (e) {
+      const msg = (e as Error).message ?? "Analysis failed. Please try again.";
+      toast.error(msg);
+      setView("search");
+    }
   };
 
-  // Transition from loading → dashboard once the query resolves
-  if (view === "loading" && report !== undefined) {
+  // Transition from loading → dashboard once the query resolves with a real report
+  if (view === "loading" && report) {
     setView("dashboard");
   }
 
