@@ -1,11 +1,11 @@
 import { action, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { Id } from "./_generated/dataModel";
 import { RedditClient, RedditComment, RedditPost } from "./services/reddit";
+import { createGeminiClient } from "./services/gemini";
 
 // ============================================================================
-// Simple Sentiment Analysis (until we add Gemini)
+// Simple Sentiment Analysis (fallback when Gemini unavailable)
 // ============================================================================
 
 const POSITIVE_WORDS = [
@@ -59,7 +59,6 @@ function processRedditData(
   const mentions: MentionWithSentiment[] = [];
 
   for (const { post, comments } of posts) {
-    // Add post content if substantial
     if (post.content && post.content.length > 50) {
       const sentiment = analyzeSentiment(post.content);
       mentions.push({
@@ -73,7 +72,6 @@ function processRedditData(
       });
     }
 
-    // Add comments
     for (const comment of comments) {
       if (comment.content && comment.content.length > 30) {
         const sentiment = analyzeSentiment(comment.content);
@@ -93,7 +91,8 @@ function processRedditData(
   return mentions;
 }
 
-function createInsights(mentions: MentionWithSentiment[], isPositive: boolean) {
+// Fallback analysis without Gemini
+function createBasicInsights(mentions: MentionWithSentiment[], isPositive: boolean) {
   const filtered = mentions.filter((m) => m.isPositive === isPositive);
 
   if (filtered.length === 0) {
@@ -107,28 +106,14 @@ function createInsights(mentions: MentionWithSentiment[], isPositive: boolean) {
     }];
   }
 
-  // Group by rough similarity (for now just take top mentions)
-  const sorted = filtered.sort((a, b) => {
-    // Prefer longer, more detailed feedback
-    return b.text.length - a.text.length;
-  });
-
-  // Create insights from top mentions
-  const insights = [];
+  const sorted = filtered.sort((a, b) => b.text.length - a.text.length);
   const topMentions = sorted.slice(0, Math.min(5, sorted.length));
 
-  // Create a single insight with the quotes
-  const title = isPositive
-    ? "User Feedback Highlights"
-    : "Areas for Improvement";
-
-  const description = isPositive
-    ? `Users shared ${filtered.length} positive mentions about this product.`
-    : `Users identified ${filtered.length} areas where improvements could be made.`;
-
-  insights.push({
-    title,
-    description,
+  return [{
+    title: isPositive ? "User Feedback Highlights" : "Areas for Improvement",
+    description: isPositive
+      ? `Users shared ${filtered.length} positive mentions about this product.`
+      : `Users identified ${filtered.length} areas where improvements could be made.`,
     frequency: filtered.length,
     quotes: topMentions.map((m) => ({
       text: m.text,
@@ -137,20 +122,16 @@ function createInsights(mentions: MentionWithSentiment[], isPositive: boolean) {
       date: m.date,
       url: m.url,
     })),
-  });
-
-  return insights;
+  }];
 }
 
-function calculateOverallScore(mentions: MentionWithSentiment[]): number {
+function calculateBasicScore(mentions: MentionWithSentiment[]): number {
   if (mentions.length === 0) return 50;
-
   const avgScore = mentions.reduce((sum, m) => sum + m.score, 0) / mentions.length;
   return Math.round(avgScore);
 }
 
-function createAspects(mentions: MentionWithSentiment[]) {
-  // Simple aspect detection based on keywords
+function createBasicAspects(mentions: MentionWithSentiment[]) {
   const aspects = [
     { name: "Features", keywords: ["feature", "functionality", "tool", "option", "capability"] },
     { name: "Ease of Use", keywords: ["easy", "intuitive", "simple", "user-friendly", "learning curve", "ux", "ui"] },
@@ -176,7 +157,7 @@ function createAspects(mentions: MentionWithSentiment[]) {
 }
 
 // ============================================================================
-// Internal Mutations (for updating report status)
+// Internal Mutations
 // ============================================================================
 
 export const updateReportStatus = internalMutation({
@@ -293,19 +274,65 @@ export const generateReport = action({
         status: "analyzing",
       });
 
-      // Process and analyze
+      // Process mentions
       const mentions = processRedditData(results);
-      const strengths = createInsights(mentions, true);
-      const issues = createInsights(mentions, false);
-      const overallScore = calculateOverallScore(mentions);
-      const aspects = createAspects(mentions);
 
-      const positiveMentions = mentions.filter((m) => m.isPositive).length;
-      const negativeMentions = mentions.length - positiveMentions;
+      // Try Gemini analysis, fall back to basic if unavailable
+      let summary: string;
+      let overallScore: number;
+      let strengths: Array<{
+        title: string;
+        description: string;
+        frequency: number;
+        quotes: Array<{ text: string; source: "reddit" | "g2"; author: string; date: string; url: string }>;
+      }>;
+      let issues: typeof strengths;
+      let aspects: Array<{ name: string; score: number; mentions: number; trend: "up" | "down" | "stable" }>;
 
-      const summary = mentions.length > 0
-        ? `Analysis of ${mentions.length} mentions from Reddit. Found ${positiveMentions} positive and ${negativeMentions} negative mentions. Overall sentiment score: ${overallScore}/100.`
-        : `Limited data found for "${productName}". Try searching for a more popular product.`;
+      const geminiApiKey = process.env.GEMINI_API_KEY;
+
+      if (geminiApiKey && mentions.length > 0) {
+        try {
+          console.log("Using Gemini for analysis...");
+          const gemini = createGeminiClient(geminiApiKey);
+          const analysis = await gemini.analyzeProductFeedback(productName, mentions);
+
+          summary = analysis.summary;
+          overallScore = analysis.overallScore;
+          strengths = analysis.strengths.map((s) => ({
+            ...s,
+            quotes: s.quotes.map((q) => ({ ...q, source: "reddit" as const })),
+          }));
+          issues = analysis.issues.map((i) => ({
+            ...i,
+            quotes: i.quotes.map((q) => ({ ...q, source: "reddit" as const })),
+          }));
+          aspects = analysis.aspects.map((a) => ({ ...a, trend: "stable" as const }));
+
+          console.log("Gemini analysis complete");
+        } catch (error) {
+          console.warn("Gemini analysis failed, using fallback:", error);
+          // Fall back to basic analysis
+          summary = `Analysis of ${mentions.length} mentions from Reddit.`;
+          overallScore = calculateBasicScore(mentions);
+          strengths = createBasicInsights(mentions, true);
+          issues = createBasicInsights(mentions, false);
+          aspects = createBasicAspects(mentions);
+        }
+      } else {
+        // No Gemini key or no mentions - use basic analysis
+        console.log("Using basic analysis (no Gemini key or no mentions)");
+        const positiveMentions = mentions.filter((m) => m.isPositive).length;
+        const negativeMentions = mentions.length - positiveMentions;
+
+        summary = mentions.length > 0
+          ? `Analysis of ${mentions.length} mentions from Reddit. Found ${positiveMentions} positive and ${negativeMentions} negative mentions.`
+          : `Limited data found for "${productName}".`;
+        overallScore = calculateBasicScore(mentions);
+        strengths = createBasicInsights(mentions, true);
+        issues = createBasicInsights(mentions, false);
+        aspects = createBasicAspects(mentions);
+      }
 
       // Save results
       await ctx.runMutation(internal.pipeline.saveReportResults, {
