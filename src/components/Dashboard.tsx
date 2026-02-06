@@ -1,4 +1,4 @@
-import { ProductReport } from "@/data/mockData";
+import { ProductReport } from "@/types/report";
 import ScoreGauge from "./ScoreGauge";
 import InsightCard from "./InsightCard";
 import AspectScoreCard from "./AspectScore";

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Insight } from "@/data/mockData";
+import { Insight } from "@/types/report";
 import QuoteCard from "./QuoteCard";
 import { ChevronDown, ChevronUp, MessageSquare } from "lucide-react";
 import { cn } from "@/lib/utils";

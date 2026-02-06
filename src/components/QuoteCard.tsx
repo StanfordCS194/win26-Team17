@@ -1,4 +1,4 @@
-import { Quote as QuoteType } from "@/data/mockData";
+import { Quote as QuoteType } from "@/types/report";
 import SourceBadge from "./SourceBadge";
 import { ExternalLink, Quote } from "lucide-react";
 
