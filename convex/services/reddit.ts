@@ -333,6 +333,188 @@ export class RedditClient implements IRedditClient {
 }
 
 // ============================================================================
+// Software-Focused Search
+// ============================================================================
+
+// Subreddits where software product discussions happen
+const SOFTWARE_SUBREDDITS = [
+  "software",
+  "SaaS",
+  "productivity",
+  "selfhosted",
+  "webdev",
+  "programming",
+  "startups",
+  "Entrepreneur",
+  "smallbusiness",
+];
+
+// Keywords that indicate software/product discussion
+const SOFTWARE_KEYWORDS = [
+  "app", "software", "tool", "platform", "service", "product",
+  "feature", "pricing", "subscription", "free tier", "alternative",
+  "review", "compared", "vs", "switched", "migrated", "using",
+  "workflow", "integration", "api", "plugin", "extension",
+  "saas", "cloud", "web", "mobile", "desktop", "browser",
+  "ux", "ui", "design", "dashboard", "login", "account",
+];
+
+// Fuzzy match: check if text contains product name with common variations
+function fuzzyMatchProduct(text: string, productName: string): boolean {
+  const lower = text.toLowerCase();
+  const productLower = productName.toLowerCase();
+  const productWords = productLower.split(/\s+/);
+
+  // Exact match
+  if (lower.includes(productLower)) return true;
+
+  // Match individual words for multi-word product names
+  if (productWords.length > 1) {
+    const allWordsMatch = productWords.every(word => lower.includes(word));
+    if (allWordsMatch) return true;
+  }
+
+  // Common variations: possessive, plural, hyphenated
+  const variations = [
+    productLower + "'s",      // Notion's
+    productLower + "s",       // Notions (typo/plural)
+    productLower + "'",       // Slack'
+    productLower.replace(/\s+/g, "-"), // multi-word hyphenated
+    productLower.replace(/\s+/g, ""),  // multi-word combined
+  ];
+
+  for (const variant of variations) {
+    if (lower.includes(variant)) return true;
+  }
+
+  // Levenshtein-lite: allow 1 character difference for longer names (>4 chars)
+  if (productLower.length > 4) {
+    const words = lower.split(/\s+/);
+    for (const word of words) {
+      if (word.length >= productLower.length - 1 && word.length <= productLower.length + 1) {
+        let diff = 0;
+        const minLen = Math.min(word.length, productLower.length);
+        for (let i = 0; i < minLen; i++) {
+          if (word[i] !== productLower[i]) diff++;
+        }
+        diff += Math.abs(word.length - productLower.length);
+        if (diff <= 1) return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+// Check if content is likely about software (not action figures, games, etc.)
+function isLikelySoftwareContent(text: string, productName: string): boolean {
+  const lower = text.toLowerCase();
+
+  // Must mention the product (with fuzzy matching)
+  if (!fuzzyMatchProduct(lower, productName)) return false;
+
+  // Check for software-related keywords
+  const keywordMatches = SOFTWARE_KEYWORDS.filter(kw => lower.includes(kw)).length;
+
+  // At least 2 software keywords = likely relevant
+  return keywordMatches >= 2;
+}
+
+// Generate search queries that target software discussions
+function generateSoftwareQueries(productName: string): string[] {
+  return [
+    `${productName} review`,
+    `${productName} software`,
+    `${productName} app`,
+    `${productName} vs`,
+    `${productName} alternative`,
+    `${productName} pricing`,
+  ];
+}
+
+export interface SoftwareSearchOptions {
+  postLimit?: number;
+  commentsPerPost?: number;
+  includeGenericSearch?: boolean;
+}
+
+// Search specifically for software product feedback
+export async function searchSoftwareProduct(
+  client: IRedditClient,
+  productName: string,
+  options: SoftwareSearchOptions = {}
+): Promise<RedditPostWithComments[]> {
+  const { postLimit = 10, commentsPerPost = 20, includeGenericSearch = true } = options;
+  const allResults: RedditPostWithComments[] = [];
+  const seenPostIds = new Set<string>();
+
+  // Generate targeted queries
+  const queries = generateSoftwareQueries(productName);
+
+  // Search software-focused subreddits first
+  for (const subreddit of SOFTWARE_SUBREDDITS.slice(0, 3)) {
+    try {
+      const results = await client.searchWithComments(productName, {
+        subreddit,
+        postLimit: 5,
+        commentsPerPost,
+      });
+
+      for (const result of results) {
+        if (!seenPostIds.has(result.post.id)) {
+          seenPostIds.add(result.post.id);
+          allResults.push(result);
+        }
+      }
+    } catch (error) {
+      // Subreddit might not exist or be private, skip it
+      console.warn(`Failed to search r/${subreddit}:`, error);
+    }
+
+    if (allResults.length >= postLimit) break;
+  }
+
+  // If we need more results, do targeted queries across Reddit
+  if (allResults.length < postLimit && includeGenericSearch) {
+    for (const query of queries.slice(0, 2)) {
+      try {
+        const results = await client.searchWithComments(query, {
+          postLimit: 5,
+          commentsPerPost,
+        });
+
+        for (const result of results) {
+          if (!seenPostIds.has(result.post.id)) {
+            seenPostIds.add(result.post.id);
+            allResults.push(result);
+          }
+        }
+      } catch (error) {
+        console.warn(`Failed to search "${query}":`, error);
+      }
+
+      if (allResults.length >= postLimit) break;
+    }
+  }
+
+  // Filter to keep only software-relevant content
+  const filtered = allResults.filter(({ post, comments }) => {
+    const postRelevant = isLikelySoftwareContent(post.title + " " + post.content, productName);
+    const hasRelevantComments = comments.some(c =>
+      isLikelySoftwareContent(c.content, productName)
+    );
+    return postRelevant || hasRelevantComments;
+  });
+
+  // If filtering removed too much, return unfiltered but limited
+  if (filtered.length < 3 && allResults.length > 0) {
+    return allResults.slice(0, postLimit);
+  }
+
+  return filtered.slice(0, postLimit);
+}
+
+// ============================================================================
 // Default Instance (for backward compatibility)
 // ============================================================================
 
