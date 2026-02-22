@@ -1,4 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useMutation } from "convex/react";
+import { api } from "../../convex/_generated/api";
+import { Id } from "../../convex/_generated/dataModel";
+import { getSessionId } from "@/lib/session";
 import { ProductReport } from "@/types/report";
 import ScoreGauge from "./ScoreGauge";
 import InsightCard from "./InsightCard";
@@ -8,13 +12,24 @@ import { Button } from "@/components/ui/button";
 
 interface DashboardProps {
   report: ProductReport;
+  reportId: Id<"productReports">;
   onBack: () => void;
   onRefresh?: () => void;
   isRefreshing?: boolean;
 }
 
-const Dashboard = ({ report, onBack, onRefresh, isRefreshing }: DashboardProps) => {
+const Dashboard = ({ report, reportId, onBack, onRefresh, isRefreshing }: DashboardProps) => {
   const [copied, setCopied] = useState(false);
+  const recordEvent = useMutation(api.analytics.recordEvent);
+
+  useEffect(() => {
+    recordEvent({
+      eventType: "dashboard_viewed",
+      sessionId: getSessionId(),
+      reportId,
+      timestamp: Date.now(),
+    }).catch(() => {});
+  }, [recordEvent, reportId]);
 
   // Check if report is older than 24 hours
   const reportAge = Date.now() - new Date(report.generatedAt).getTime();

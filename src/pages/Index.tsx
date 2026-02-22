@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
-import { useQuery, useAction } from "convex/react";
+import { useQuery, useAction, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
+import { getSessionId } from "@/lib/session";
 import Header from "@/components/Header";
 import SearchHero from "@/components/SearchHero";
 import LoadingState from "@/components/LoadingState";
@@ -20,6 +21,7 @@ const Index = () => {
   const [initialLoadDone, setInitialLoadDone] = useState(false);
 
   const analyzeProduct = useAction(api.reports.analyzeProduct);
+  const recordEvent = useMutation(api.analytics.recordEvent);
 
   // Check for product in URL on mount
   useEffect(() => {
@@ -32,6 +34,13 @@ const Index = () => {
       setSearchQuery(productParam);
       setView("loading");
       setIsAnalyzing(true);
+
+      recordEvent({
+        eventType: "search_submitted",
+        sessionId: getSessionId(),
+        productName: productParam,
+        timestamp: Date.now(),
+      }).catch(() => {});
 
       analyzeProduct({ productName: productParam })
         .then((result) => {
@@ -46,7 +55,7 @@ const Index = () => {
     }
 
     setInitialLoadDone(true);
-  }, [initialLoadDone, analyzeProduct]);
+  }, [initialLoadDone, analyzeProduct, recordEvent]);
 
   // Query for the report by product name
   const report = useQuery(
@@ -84,6 +93,13 @@ const Index = () => {
     setError(null);
     setView("loading");
     setIsAnalyzing(true);
+
+    recordEvent({
+      eventType: "search_submitted",
+      sessionId: getSessionId(),
+      productName: query,
+      timestamp: Date.now(),
+    }).catch(() => {});
 
     try {
       const result = await analyzeProduct({ productName: query });
@@ -182,6 +198,7 @@ const Index = () => {
       {view === "dashboard" && report && report.status === "complete" && (
         <Dashboard
           report={toProductReport(report)}
+          reportId={report._id}
           onBack={handleBack}
           onRefresh={handleRefresh}
           isRefreshing={isAnalyzing}
