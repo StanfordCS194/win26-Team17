@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useQuery, useAction, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
-import { getSessionId } from "@/lib/session";
+import { getSessionId, getUserId } from "@/lib/session";
 import Header from "@/components/Header";
 import SearchHero from "@/components/SearchHero";
 import LoadingState from "@/components/LoadingState";
@@ -38,6 +38,7 @@ const Index = () => {
       recordEvent({
         eventType: "search_submitted",
         sessionId: getSessionId(),
+        userId: getUserId(),
         productName: productParam,
         timestamp: Date.now(),
       }).catch(() => {});
@@ -97,6 +98,7 @@ const Index = () => {
     recordEvent({
       eventType: "search_submitted",
       sessionId: getSessionId(),
+      userId: getUserId(),
       productName: query,
       timestamp: Date.now(),
     }).catch(() => {});

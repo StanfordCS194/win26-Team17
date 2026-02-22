@@ -75,6 +75,10 @@ npx convex env set GEMINI_API_KEY "your-api-key-here"
 
 Without a Gemini key, the app falls back to basic keyword-based analysis.
 
+## KPI tracking
+
+Internal KPIs (completion rate, time to insight, evidence engagement, defensibility, return usage, source coverage) are tracked in Convex. The **internal KPI dashboard** is at **`/kpis`** (no link in the main UI; type the URL). Definitions and how each KPI is measured are in [docs/KPI_TRACKING_PLAN.md](docs/KPI_TRACKING_PLAN.md). The KPI lead owns weekly review and monthly OKR linkage (see that doc).
+
 ## How can I deploy this project?
 
 Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.

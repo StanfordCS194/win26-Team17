@@ -1,13 +1,17 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
+const eventTypeValidator = v.union(
+  v.literal("search_submitted"),
+  v.literal("dashboard_viewed"),
+  v.literal("quote_engaged")
+);
+
 export const recordEvent = mutation({
   args: {
-    eventType: v.union(
-      v.literal("search_submitted"),
-      v.literal("dashboard_viewed")
-    ),
+    eventType: eventTypeValidator,
     sessionId: v.string(),
+    userId: v.optional(v.string()),
     productName: v.optional(v.string()),
     reportId: v.optional(v.id("productReports")),
     timestamp: v.number(),
@@ -16,8 +20,27 @@ export const recordEvent = mutation({
     await ctx.db.insert("analyticsEvents", {
       eventType: args.eventType,
       sessionId: args.sessionId,
+      userId: args.userId,
       productName: args.productName,
       reportId: args.reportId,
+      timestamp: args.timestamp,
+    });
+  },
+});
+
+export const recordDefensibilityRating = mutation({
+  args: {
+    reportId: v.id("productReports"),
+    sessionId: v.string(),
+    score: v.number(),
+    timestamp: v.number(),
+  },
+  handler: async (ctx, args) => {
+    if (args.score < 1 || args.score > 5) return;
+    await ctx.db.insert("defensibilityRatings", {
+      reportId: args.reportId,
+      sessionId: args.sessionId,
+      score: args.score,
       timestamp: args.timestamp,
     });
   },
@@ -141,10 +164,98 @@ export const getAverageTimeToInsight = query({
   },
 });
 
+export const getEvidenceEngagementRate = query({
+  args: {},
+  handler: async (ctx) => {
+    const events = await ctx.db.query("analyticsEvents").collect();
+    const dashboardSessions = new Set(
+      events
+        .filter((e) => e.eventType === "dashboard_viewed")
+        .map((e) => e.sessionId)
+    );
+    const quoteEngagedSessions = new Set(
+      events
+        .filter((e) => e.eventType === "quote_engaged")
+        .map((e) => e.sessionId)
+    );
+
+    const totalDashboardSessions = dashboardSessions.size;
+    const sessionsWithQuoteEngaged = [...dashboardSessions].filter((sid) =>
+      quoteEngagedSessions.has(sid)
+    ).length;
+
+    const evidenceEngagementRate =
+      totalDashboardSessions === 0
+        ? 0
+        : Math.round((sessionsWithQuoteEngaged / totalDashboardSessions) * 1000) / 10;
+
+    return {
+      evidenceEngagementRate,
+      totalDashboardSessions,
+      sessionsWithQuoteEngaged,
+    };
+  },
+});
+
+export const getDefensibilityScore = query({
+  args: {},
+  handler: async (ctx) => {
+    const ratings = await ctx.db.query("defensibilityRatings").collect();
+    const total = ratings.length;
+    if (total === 0) {
+      return { defensibilityAverage: 0, defensibilityCount: 0 };
+    }
+    const sum = ratings.reduce((acc, r) => acc + r.score, 0);
+    const defensibilityAverage = Math.round((sum / total) * 10) / 10;
+    return { defensibilityAverage, defensibilityCount: total };
+  },
+});
+
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+export const getReturnUsageRate = query({
+  args: {},
+  handler: async (ctx) => {
+    const events = await ctx.db.query("analyticsEvents").collect();
+    const searchEvents = events.filter(
+      (e) => e.eventType === "search_submitted" && e.userId
+    );
+
+    const timestampsByUser = new Map<string, number[]>();
+    for (const e of searchEvents) {
+      const uid = e.userId!;
+      const list = timestampsByUser.get(uid) ?? [];
+      list.push(e.timestamp);
+      timestampsByUser.set(uid, list);
+    }
+
+    let usersWithSecondWithin7Days = 0;
+    for (const [, timestamps] of timestampsByUser) {
+      const sorted = [...timestamps].sort((a, b) => a - b);
+      if (sorted.length >= 2 && sorted[1] - sorted[0] <= SEVEN_DAYS_MS) {
+        usersWithSecondWithin7Days += 1;
+      }
+    }
+
+    const totalUsersWithOneSearch = timestampsByUser.size;
+    const returnUsageRate =
+      totalUsersWithOneSearch === 0
+        ? 0
+        : Math.round((usersWithSecondWithin7Days / totalUsersWithOneSearch) * 1000) / 10;
+
+    return {
+      returnUsageRate,
+      totalUsersWithOneSearch,
+      usersWithSecondWithin7Days,
+    };
+  },
+});
+
 export const getKPIDashboard = query({
   args: {},
   handler: async (ctx) => {
     const events = await ctx.db.query("analyticsEvents").collect();
+    const ratings = await ctx.db.query("defensibilityRatings").collect();
     const reports = await ctx.db
       .query("productReports")
       .filter((q) => q.eq(q.field("status"), "complete"))
@@ -211,6 +322,57 @@ export const getKPIDashboard = query({
       (r) => (r.sourcesAnalyzed ?? 0) >= 2
     ).length;
 
+    // Evidence engagement
+    const dashboardSessionsSet = new Set(
+      events
+        .filter((e) => e.eventType === "dashboard_viewed")
+        .map((e) => e.sessionId)
+    );
+    const quoteEngagedSessionsSet = new Set(
+      events
+        .filter((e) => e.eventType === "quote_engaged")
+        .map((e) => e.sessionId)
+    );
+    const totalDashboardSessions = dashboardSessionsSet.size;
+    const sessionsWithQuoteEngaged = [...dashboardSessionsSet].filter((sid) =>
+      quoteEngagedSessionsSet.has(sid)
+    ).length;
+    const evidenceEngagementRate =
+      totalDashboardSessions === 0
+        ? 0
+        : Math.round((sessionsWithQuoteEngaged / totalDashboardSessions) * 1000) / 10;
+
+    // Defensibility
+    const defensibilityCount = ratings.length;
+    const defensibilityAverage =
+      defensibilityCount === 0
+        ? 0
+        : Math.round((ratings.reduce((acc, r) => acc + r.score, 0) / defensibilityCount) * 10) / 10;
+
+    // Return usage (users who ran a second report within 7 days)
+    const searchWithUserId = events.filter(
+      (e) => e.eventType === "search_submitted" && e.userId
+    );
+    const timestampsByUser = new Map<string, number[]>();
+    for (const e of searchWithUserId) {
+      const uid = e.userId!;
+      const list = timestampsByUser.get(uid) ?? [];
+      list.push(e.timestamp);
+      timestampsByUser.set(uid, list);
+    }
+    let usersWithSecondWithin7Days = 0;
+    for (const [, timestamps] of timestampsByUser) {
+      const sorted = [...timestamps].sort((a, b) => a - b);
+      if (sorted.length >= 2 && sorted[1] - sorted[0] <= SEVEN_DAYS_MS) {
+        usersWithSecondWithin7Days += 1;
+      }
+    }
+    const totalUsersWithOneSearch = timestampsByUser.size;
+    const returnUsageRate =
+      totalUsersWithOneSearch === 0
+        ? 0
+        : Math.round((usersWithSecondWithin7Days / totalUsersWithOneSearch) * 1000) / 10;
+
     return {
       completionRate,
       totalSearches,
@@ -220,6 +382,14 @@ export const getKPIDashboard = query({
       totalSessionsMeasured,
       averageSourcesAnalyzed,
       reportsWithTwoOrMoreSources,
+      evidenceEngagementRate,
+      totalDashboardSessions,
+      sessionsWithQuoteEngaged,
+      defensibilityAverage,
+      defensibilityCount,
+      returnUsageRate,
+      totalUsersWithOneSearch,
+      usersWithSecondWithin7Days,
     };
   },
 });

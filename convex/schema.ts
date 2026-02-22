@@ -47,12 +47,22 @@ export default defineSchema({
     eventType: v.union(
       v.literal("search_submitted"),
       v.literal("dashboard_viewed"),
+      v.literal("quote_engaged"),
     ),
     sessionId: v.string(),
+    userId: v.optional(v.string()),
     productName: v.optional(v.string()),
     reportId: v.optional(v.id("productReports")),
     timestamp: v.number(),
   })
     .index("by_sessionId", ["sessionId"])
     .index("by_eventType", ["eventType"]),
+  defensibilityRatings: defineTable({
+    reportId: v.id("productReports"),
+    sessionId: v.string(),
+    score: v.number(),
+    timestamp: v.number(),
+  })
+    .index("by_reportId", ["reportId"])
+    .index("by_sessionId", ["sessionId"]),
 });
