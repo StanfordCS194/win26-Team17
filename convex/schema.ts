@@ -23,12 +23,27 @@ const aspectScoreValidator = v.object({
   trend: v.union(v.literal("up"), v.literal("down"), v.literal("stable")),
 });
 
+const issueRadarValidator = v.object({
+  aspect: v.string(),
+  score: v.number(),
+  mentionCount: v.number(),
+  sentimentScore: v.number(),
+});
+
+const confidenceValidator = v.object({
+  overall: v.number(),
+  coverage: v.number(),
+  agreement: v.number(),
+  sourceDiversity: v.number(),
+});
+
 export default defineSchema({
   productReports: defineTable({
     productName: v.string(),
     status: v.union(
       v.literal("pending"),
       v.literal("fetching"),
+      v.literal("classifying"),
       v.literal("analyzing"),
       v.literal("complete"),
       v.literal("error")
@@ -41,6 +56,8 @@ export default defineSchema({
     strengths: v.optional(v.array(insightValidator)),
     issues: v.optional(v.array(insightValidator)),
     aspects: v.optional(v.array(aspectScoreValidator)),
+    issueRadar: v.optional(v.array(issueRadarValidator)),
+    confidence: v.optional(confidenceValidator),
     errorMessage: v.optional(v.string()),
   }).index("by_productName", ["productName"]),
 });
