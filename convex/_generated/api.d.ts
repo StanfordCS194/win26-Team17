@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as analytics from "../analytics.js";
 import type * as pipeline from "../pipeline.js";
 import type * as reports from "../reports.js";
 import type * as services_gemini from "../services/gemini.js";
@@ -21,6 +22,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  analytics: typeof analytics;
   pipeline: typeof pipeline;
   reports: typeof reports;
   "services/gemini": typeof services_gemini;
