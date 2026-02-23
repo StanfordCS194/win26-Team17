@@ -3,7 +3,7 @@ import { useQuery, useAction, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
 import { getSessionId, getUserId } from "@/lib/session";
-import { addSessionSearch } from "@/lib/sessionSearchHistory";
+import { addSessionSearch, getSessionSearches } from "@/lib/sessionSearchHistory";
 import Header from "@/components/Header";
 import SearchHero from "@/components/SearchHero";
 import LoadingState from "@/components/LoadingState";
@@ -20,7 +20,7 @@ const Index = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
-  const [sessionSearches, setSessionSearches] = useState<string[]>([]);
+  const [sessionSearches, setSessionSearches] = useState<string[]>(getSessionSearches);
 
   const analyzeProduct = useAction(api.reports.analyzeProduct);
   const recordEvent = useMutation(api.analytics.recordEvent);
