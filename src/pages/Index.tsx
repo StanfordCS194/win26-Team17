@@ -19,6 +19,7 @@ const Index = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
+  const [sessionSearches, setSessionSearches] = useState<string[]>([]);
 
   const analyzeProduct = useAction(api.reports.analyzeProduct);
   const recordEvent = useMutation(api.analytics.recordEvent);
@@ -91,6 +92,7 @@ const Index = () => {
 
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
+    setSessionSearches((prev) => prev.includes(query) ? prev : [...prev, query]);
     setError(null);
     setView("loading");
     setIsAnalyzing(true);
@@ -187,7 +189,7 @@ const Index = () => {
       <Header />
 
       {view === "search" && (
-        <SearchHero onSearch={handleSearch} isLoading={isAnalyzing} />
+        <SearchHero onSearch={handleSearch} isLoading={isAnalyzing} sessionSearches={sessionSearches} />
       )}
 
       {view === "loading" && (
