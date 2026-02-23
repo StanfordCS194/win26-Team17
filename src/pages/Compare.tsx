@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { useQuery, useAction } from "convex/react";
+import { getSessionSearches, addSessionSearch } from "@/lib/sessionSearchHistory";
 import { api } from "../../convex/_generated/api";
 import Header from "@/components/Header";
 import ScoreGauge from "@/components/ScoreGauge";
@@ -44,6 +45,7 @@ const Compare = () => {
   const [area2Status, setArea2Status] = useState<AreaStatus>("idle");
   const [area1Error, setArea1Error] = useState<string | null>(null);
   const [area2Error, setArea2Error] = useState<string | null>(null);
+  const [sessionSearches, setSessionSearches] = useState<string[]>(getSessionSearches);
 
   const analyzeProduct = useAction(api.reports.analyzeProduct);
   const report1 = useQuery(
@@ -54,7 +56,6 @@ const Compare = () => {
     api.reports.getByProductName,
     area2Query.trim() ? { productName: area2Query.trim() } : "skip"
   );
-  const existingProducts = useQuery(api.reports.listProductNames) ?? [];
 
   const runAnalysis = useCallback(
     async (area: 1 | 2, productName: string) => {
@@ -64,6 +65,7 @@ const Compare = () => {
       const trimmed = productName.trim();
       if (trimmed.length < MIN_LENGTH || trimmed.length > MAX_LENGTH) return;
       setQuery(trimmed);
+      setSessionSearches(addSessionSearch(trimmed));
       setError(null);
       setStatus("loading");
       try {
@@ -157,9 +159,9 @@ const Compare = () => {
                   )}
                 </Button>
               </div>
-              {existingProducts.length > 0 && (
+              {sessionSearches.length > 0 && (
                 <div className="flex flex-wrap gap-2">
-                  {existingProducts.slice(0, 5).map((name) => (
+                  {sessionSearches.slice(0, 5).map((name) => (
                     <button
                       key={name}
                       type="button"
@@ -206,9 +208,9 @@ const Compare = () => {
                   )}
                 </Button>
               </div>
-              {existingProducts.length > 0 && (
+              {sessionSearches.length > 0 && (
                 <div className="flex flex-wrap gap-2">
-                  {existingProducts.slice(0, 5).map((name) => (
+                  {sessionSearches.slice(0, 5).map((name) => (
                     <button
                       key={name}
                       type="button"
