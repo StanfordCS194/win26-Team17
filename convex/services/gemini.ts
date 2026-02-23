@@ -111,6 +111,7 @@ export class GeminiClient {
         generationConfig: {
           temperature,
           maxOutputTokens: 16384,
+          responseMimeType: "application/json",
         },
       }),
     });
@@ -131,18 +132,26 @@ export class GeminiClient {
   }
 
   private parseJsonResponse<T>(text: string): T {
-    // Try matching both opening and closing fences first
-    const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-    let jsonStr: string;
-
-    if (jsonMatch) {
-      jsonStr = jsonMatch[1].trim();
-    } else {
-      // Strip leading fence when closing one is missing (truncated response)
-      jsonStr = text.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
+    // Try raw JSON first (when responseMimeType is application/json)
+    const trimmed = text.trim();
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      // Fall back to extracting from code fences
     }
 
-    // If still not valid JSON, extract from first { to last }
+    // Try matching both opening and closing fences
+    const jsonMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (jsonMatch) {
+      try {
+        return JSON.parse(jsonMatch[1].trim());
+      } catch {
+        // Fall through
+      }
+    }
+
+    // Strip leading fence when closing one is missing (truncated response)
+    let jsonStr = trimmed.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
     if (!jsonStr.startsWith("{") && !jsonStr.startsWith("[")) {
       const braceStart = jsonStr.indexOf("{");
       const braceEnd = jsonStr.lastIndexOf("}");
@@ -154,7 +163,7 @@ export class GeminiClient {
     try {
       return JSON.parse(jsonStr);
     } catch {
-      throw new GeminiApiError(`Failed to parse Gemini response as JSON: ${jsonStr.slice(0, 200)}`);
+      throw new GeminiApiError(`Failed to parse Gemini response as JSON: ${trimmed.slice(0, 200)}`);
     }
   }
 
