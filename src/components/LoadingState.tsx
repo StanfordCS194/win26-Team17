@@ -17,7 +17,7 @@ const LoadingState = ({ productName, status = "pending" }: LoadingStateProps) =>
   const progress = Math.max(10, ((currentStepIndex + 1) / steps.length) * 100);
 
   return (
-    <div className="min-h-[70vh] flex flex-col items-center justify-center px-4">
+    <div className="min-h-[70vh] flex flex-col items-center justify-center px-4 pt-20">
       <div className="text-center max-w-md mx-auto">
         {/* Pulsing Logo */}
         <div className="relative mb-8">

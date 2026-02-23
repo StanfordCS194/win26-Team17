@@ -60,7 +60,7 @@ const SearchHero = ({ onSearch, isLoading }: SearchHeroProps) => {
   };
 
   return (
-    <div className="min-h-[85vh] flex flex-col items-center justify-center px-4">
+    <div className="min-h-[85vh] flex flex-col items-center justify-center px-4 pt-20">
       <div className="text-center max-w-3xl mx-auto">
         {/* Badge */}
         <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-accent/10 text-accent text-sm font-medium mb-8 animate-fade-up">
@@ -152,27 +152,6 @@ const SearchHero = ({ onSearch, isLoading }: SearchHeroProps) => {
         )}
       </div>
 
-      {/* Stats */}
-      <div className="mt-16 grid grid-cols-3 gap-8 md:gap-16 text-center animate-fade-up animation-delay-500">
-        <div>
-          <div className="text-2xl md:text-3xl font-bold text-foreground">
-            2+
-          </div>
-          <div className="text-sm text-muted-foreground">Sources Analyzed</div>
-        </div>
-        <div>
-          <div className="text-2xl md:text-3xl font-bold text-foreground">
-            &lt;5 min
-          </div>
-          <div className="text-sm text-muted-foreground">Time to Insights</div>
-        </div>
-        <div>
-          <div className="text-2xl md:text-3xl font-bold text-foreground">
-            100%
-          </div>
-          <div className="text-sm text-muted-foreground">Evidence-Backed</div>
-        </div>
-      </div>
 
       {/* Recent Reports */}
       <RecentReports onSelect={handleSuggestionClick} isLoading={isLoading} />
