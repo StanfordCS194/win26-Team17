@@ -2,6 +2,7 @@ import { action, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { RedditClient, RedditComment, RedditPost, searchSoftwareProduct } from "./services/reddit";
+import { HNStoryWithComments, createHackerNewsClient, searchSoftwareProductHN } from "./services/hackernews";
 import { createGeminiClient } from "./services/gemini";
 
 // ============================================================================
@@ -50,7 +51,7 @@ interface MentionWithSentiment {
   url: string;
   score: number;
   isPositive: boolean;
-  source: "reddit";
+  source: "reddit" | "hackernews" | "g2";
 }
 
 function processRedditData(
@@ -91,6 +92,46 @@ function processRedditData(
   return mentions;
 }
 
+function processHackerNewsData(
+  stories: HNStoryWithComments[]
+): MentionWithSentiment[] {
+  const mentions: MentionWithSentiment[] = [];
+
+  for (const { story, comments } of stories) {
+    const storyText = story.storyText || story.title;
+    if (storyText && storyText.length > 30) {
+      const sentiment = analyzeSentiment(storyText);
+      const hnUrl = `https://news.ycombinator.com/item?id=${story.id}`;
+      mentions.push({
+        text: storyText.slice(0, 500),
+        author: story.author,
+        date: story.createdAt,
+        url: story.url || hnUrl,
+        score: sentiment.score,
+        isPositive: sentiment.isPositive,
+        source: "hackernews",
+      });
+    }
+
+    for (const comment of comments) {
+      if (comment.text && comment.text.length > 30) {
+        const sentiment = analyzeSentiment(comment.text);
+        mentions.push({
+          text: comment.text.slice(0, 500),
+          author: comment.author,
+          date: comment.createdAt,
+          url: `https://news.ycombinator.com/item?id=${comment.id}`,
+          score: sentiment.score,
+          isPositive: sentiment.isPositive,
+          source: "hackernews",
+        });
+      }
+    }
+  }
+
+  return mentions;
+}
+
 // Fallback analysis without Gemini
 function createBasicInsights(mentions: MentionWithSentiment[], isPositive: boolean) {
   const filtered = mentions.filter((m) => m.isPositive === isPositive);
@@ -117,7 +158,7 @@ function createBasicInsights(mentions: MentionWithSentiment[], isPositive: boole
     frequency: filtered.length,
     quotes: topMentions.map((m) => ({
       text: m.text,
-      source: m.source as "reddit" | "g2",
+      source: m.source as "reddit" | "hackernews" | "g2",
       author: m.author,
       date: m.date,
       url: m.url,
@@ -195,7 +236,7 @@ export const saveReportResults = internalMutation({
         quotes: v.array(
           v.object({
             text: v.string(),
-            source: v.union(v.literal("reddit"), v.literal("g2")),
+            source: v.union(v.literal("reddit"), v.literal("hackernews"), v.literal("g2")),
             author: v.string(),
             date: v.string(),
             url: v.string(),
@@ -211,7 +252,7 @@ export const saveReportResults = internalMutation({
         quotes: v.array(
           v.object({
             text: v.string(),
-            source: v.union(v.literal("reddit"), v.literal("g2")),
+            source: v.union(v.literal("reddit"), v.literal("hackernews"), v.literal("g2")),
             author: v.string(),
             date: v.string(),
             url: v.string(),
@@ -261,21 +302,56 @@ export const generateReport = action({
         status: "fetching",
       });
 
-      // Fetch Reddit data with software-focused search
-      const reddit = new RedditClient({ cacheTtlMs: 60000 });
-      const results = await searchSoftwareProduct(reddit, productName, {
-        postLimit: 10,
-        commentsPerPost: 20,
-      });
+      // Fetch data from multiple sources in parallel
+      const [redditResult, hnResult] = await Promise.allSettled([
+        (async () => {
+          const reddit = new RedditClient({ cacheTtlMs: 60000 });
+          const results = await searchSoftwareProduct(reddit, productName, {
+            postLimit: 10,
+            commentsPerPost: 20,
+          });
+          return processRedditData(results);
+        })(),
+        (async () => {
+          const hn = createHackerNewsClient({ cacheTtlMs: 60000 });
+          const results = await searchSoftwareProductHN(hn, productName, {
+            storyLimit: 10,
+            commentsPerStory: 20,
+          });
+          return processHackerNewsData(results);
+        })(),
+      ]);
+
+      // Collect successes, gracefully skip failures
+      const mentions: MentionWithSentiment[] = [];
+      let sourcesAnalyzed = 0;
+      const sourceNames: string[] = [];
+
+      if (redditResult.status === "fulfilled") {
+        mentions.push(...redditResult.value);
+        if (redditResult.value.length > 0) {
+          sourcesAnalyzed++;
+          sourceNames.push("Reddit");
+        }
+      } else {
+        console.warn("Reddit fetch failed:", redditResult.reason);
+      }
+
+      if (hnResult.status === "fulfilled") {
+        mentions.push(...hnResult.value);
+        if (hnResult.value.length > 0) {
+          sourcesAnalyzed++;
+          sourceNames.push("HackerNews");
+        }
+      } else {
+        console.warn("HackerNews fetch failed:", hnResult.reason);
+      }
 
       // Update status: analyzing
       await ctx.runMutation(internal.pipeline.updateReportStatus, {
         reportId,
         status: "analyzing",
       });
-
-      // Process mentions
-      const mentions = processRedditData(results);
 
       // Try Gemini analysis, fall back to basic if unavailable
       let summary: string;
@@ -284,7 +360,7 @@ export const generateReport = action({
         title: string;
         description: string;
         frequency: number;
-        quotes: Array<{ text: string; source: "reddit" | "g2"; author: string; date: string; url: string }>;
+        quotes: Array<{ text: string; source: "reddit" | "hackernews" | "g2"; author: string; date: string; url: string }>;
       }>;
       let issues: typeof strengths;
       let aspects: Array<{ name: string; score: number; mentions: number; trend: "up" | "down" | "stable" }>;
@@ -299,13 +375,19 @@ export const generateReport = action({
 
           summary = analysis.summary;
           overallScore = analysis.overallScore;
+          const mentionUrlToSource = new Map(
+            mentions.map((m) => [m.url, m.source])
+          );
+          const lookupSource = (url: string) =>
+            mentionUrlToSource.get(url) || "reddit" as const;
+
           strengths = analysis.strengths.map((s) => ({
             ...s,
-            quotes: s.quotes.map((q) => ({ ...q, source: "reddit" as const })),
+            quotes: s.quotes.map((q) => ({ ...q, source: lookupSource(q.url) })),
           }));
           issues = analysis.issues.map((i) => ({
             ...i,
-            quotes: i.quotes.map((q) => ({ ...q, source: "reddit" as const })),
+            quotes: i.quotes.map((q) => ({ ...q, source: lookupSource(q.url) })),
           }));
           aspects = analysis.aspects.map((a) => ({ ...a, trend: "stable" as const }));
 
@@ -313,7 +395,7 @@ export const generateReport = action({
         } catch (error) {
           console.warn("Gemini analysis failed, using fallback:", error);
           // Fall back to basic analysis
-          summary = `Analysis of ${mentions.length} mentions from Reddit.`;
+          summary = `Analysis of ${mentions.length} mentions from ${sourceNames.join(" and ") || "online sources"}.`;
           overallScore = calculateBasicScore(mentions);
           strengths = createBasicInsights(mentions, true);
           issues = createBasicInsights(mentions, false);
@@ -326,7 +408,7 @@ export const generateReport = action({
         const negativeMentions = mentions.length - positiveMentions;
 
         summary = mentions.length > 0
-          ? `Analysis of ${mentions.length} mentions from Reddit. Found ${positiveMentions} positive and ${negativeMentions} negative mentions.`
+          ? `Analysis of ${mentions.length} mentions from ${sourceNames.join(" and ") || "online sources"}. Found ${positiveMentions} positive and ${negativeMentions} negative mentions.`
           : `Limited data found for "${productName}".`;
         overallScore = calculateBasicScore(mentions);
         strengths = createBasicInsights(mentions, true);
@@ -339,7 +421,7 @@ export const generateReport = action({
         reportId,
         overallScore,
         totalMentions: mentions.length,
-        sourcesAnalyzed: 1,
+        sourcesAnalyzed: Math.max(sourcesAnalyzed, 1),
         summary,
         strengths,
         issues,

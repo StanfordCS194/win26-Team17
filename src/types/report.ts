@@ -1,6 +1,6 @@
 export interface Quote {
   text: string;
-  source: "reddit" | "g2";
+  source: "reddit" | "hackernews" | "g2";
   author: string;
   date: string;
   url: string;

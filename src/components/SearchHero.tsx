@@ -78,7 +78,7 @@ const SearchHero = ({ onSearch, isLoading }: SearchHeroProps) => {
 
         {/* Subheadline */}
         <p className="text-lg md:text-xl text-muted-foreground mb-10 max-w-2xl mx-auto animate-fade-up animation-delay-200">
-          Transform scattered feedback from Reddit, G2, and forums into
+          Transform scattered feedback from Reddit, HackerNews, G2, and forums into
           actionable insights in under 5 minutes. Evidence-backed analysis for
           confident product decisions.
         </p>

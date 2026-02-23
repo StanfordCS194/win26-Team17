@@ -142,7 +142,7 @@ export class GeminiClient {
       sentiment: m.isPositive ? "positive" : "negative",
     }));
 
-    const prompt = `You are analyzing user feedback about "${productName}" from Reddit.
+    const prompt = `You are analyzing user feedback about "${productName}" from multiple online sources.
 
 Here are ${limitedMentions.length} user mentions (out of ${mentions.length} total):
 
