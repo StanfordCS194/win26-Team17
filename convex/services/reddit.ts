@@ -470,19 +470,7 @@ function fuzzyMatchProduct(text: string, productName: string): boolean {
   return false;
 }
 
-// Check if content is likely about software (not action figures, games, etc.)
-function isLikelySoftwareContent(text: string, productName: string): boolean {
-  const lower = text.toLowerCase();
-
-  // Must mention the product (with fuzzy matching)
-  if (!fuzzyMatchProduct(lower, productName)) return false;
-
-  // Check for software-related keywords
-  const keywordMatches = SOFTWARE_KEYWORDS.filter(kw => lower.includes(kw)).length;
-
-  // At least 2 software keywords = likely relevant
-  return keywordMatches >= 2;
-}
+// isLikelySoftwareContent is imported from ./contentFilter
 
 // Generate search queries that target software discussions
 function generateSoftwareQueries(productName: string): string[] {
@@ -513,7 +501,7 @@ export async function searchSoftwareProduct(
   productName: string,
   options: SoftwareSearchOptions = {}
 ): Promise<RedditPostWithComments[]> {
-  const { postLimit = 25, commentsPerPost = 25, includeGenericSearch = true } = options;
+  const { postLimit = 15, commentsPerPost = 10, includeGenericSearch = true } = options;
   const allResults: RedditPostWithComments[] = [];
   const seenPostIds = new Set<string>();
 
@@ -530,12 +518,12 @@ export async function searchSoftwareProduct(
 
   // 1. Search product-specific subreddits first (highest signal)
   const productSubs = getProductSubreddits(productName);
-  for (const subreddit of productSubs) {
+  for (const subreddit of productSubs.slice(0, 2)) {
     if (allResults.length >= postLimit) break;
     try {
       const results = await client.searchWithComments(productName, {
         subreddit,
-        postLimit: 10,
+        postLimit: 5,
         commentsPerPost,
       });
       addResults(results);
@@ -545,7 +533,7 @@ export async function searchSoftwareProduct(
   }
 
   // 2. Search software-focused subreddits (broader net)
-  for (const subreddit of SOFTWARE_SUBREDDITS.slice(0, 6)) {
+  for (const subreddit of SOFTWARE_SUBREDDITS.slice(0, 3)) {
     if (allResults.length >= postLimit) break;
     try {
       const results = await client.searchWithComments(productName, {
@@ -561,11 +549,11 @@ export async function searchSoftwareProduct(
 
   // 3. Targeted queries across all of Reddit
   if (allResults.length < postLimit && includeGenericSearch) {
-    for (const query of queries.slice(0, 4)) {
+    for (const query of queries.slice(0, 2)) {
       if (allResults.length >= postLimit) break;
       try {
         const results = await client.searchWithComments(query, {
-          postLimit: 10,
+          postLimit: 5,
           commentsPerPost,
         });
         addResults(results);

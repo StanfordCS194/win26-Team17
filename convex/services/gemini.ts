@@ -23,6 +23,7 @@ export interface AnalyzedInsight {
     author: string;
     date: string;
     url: string;
+    source?: string;
   }>;
 }
 
@@ -265,22 +266,17 @@ Fix these issues in this attempt:
 `;
     }
 
-    // Prepare mentions for the prompt (limit to avoid token limits)
-    const limitedMentions = mentions.slice(0, 50).map((m, i) => ({
-      id: i,
-      text: m.text.slice(0, 400),
-      author: m.author,
-      sentiment: m.isPositive ? "positive" : "negative",
-    }));
-
-    const prompt = `You are analyzing user feedback about the product "${productName}" from Reddit.
-
+    return `You are analyzing user feedback about the product "${productName}" from multiple sources.
+${retryInstructions}
 IMPORTANT: Some mentions may be off-topic, irrelevant, or not actually about "${productName}".
 Before using a mention, verify it is genuinely discussing "${productName}" (the specific product/service).
 Completely IGNORE mentions that:
 - Are about a different product, person, or topic that happens to share a similar name
 - Do not contain any actionable feedback about "${productName}"
 - Are generic comments, memes, or jokes with no product insight
+
+Sources analyzed:
+${sourceLines}
 
 Here are ${limitedMentions.length} user mentions (out of ${totalMentions} total):
 
@@ -313,6 +309,7 @@ Analyze ONLY the relevant feedback and return a JSON object with this exact stru
 
 Rules:
 - Only reference mentionIds of mentions that are genuinely about "${productName}"
+- Only use mentionIds between 0 and ${limitedMentions.length - 1}
 - Identify 2-4 distinct strengths (positive themes)
 - Identify 2-4 distinct issues (negative themes/complaints)
 - Each strength/issue should have specific, descriptive titles (not generic like "User Feedback")
@@ -343,9 +340,31 @@ Rules:
       };
     }
 
-    const limitedMentions = mentions.slice(0, 30).map((m, i) => ({
+    // Interleave mentions from different sources so Gemini sees a balanced mix
+    const bySource = new Map<string, MentionInput[]>();
+    for (const m of mentions) {
+      const src = m.source || "reddit";
+      if (!bySource.has(src)) bySource.set(src, []);
+      bySource.get(src)!.push(m);
+    }
+    const interleaved: MentionInput[] = [];
+    const iterators = [...bySource.values()].map((arr) => arr[Symbol.iterator]());
+    let added = true;
+    while (added && interleaved.length < 50) {
+      added = false;
+      for (const it of iterators) {
+        if (interleaved.length >= 50) break;
+        const next = it.next();
+        if (!next.done) {
+          interleaved.push(next.value);
+          added = true;
+        }
+      }
+    }
+
+    const limitedMentions = interleaved.map((m, i) => ({
       id: i,
-      text: m.text.slice(0, 300),
+      text: m.text.slice(0, 400),
       author: m.author,
       sentiment: m.isPositive ? "positive" : "negative",
       source: m.source || "reddit",
@@ -405,12 +424,13 @@ Rules:
       frequency: insight.mentionIds?.length || 0,
       quotes: (insight.mentionIds || [])
         .slice(0, 5)
-        .filter((id) => id >= 0 && id < mentions.length)
+        .filter((id) => id >= 0 && id < interleaved.length)
         .map((id) => ({
-          text: mentions[id]?.text || "",
-          author: mentions[id]?.author || "Unknown",
-          date: mentions[id]?.date || "",
-          url: mentions[id]?.url || "",
+          text: interleaved[id]?.text || "",
+          author: interleaved[id]?.author || "Unknown",
+          date: interleaved[id]?.date || "",
+          url: interleaved[id]?.url || "",
+          source: interleaved[id]?.source || "reddit",
         })),
     });
 

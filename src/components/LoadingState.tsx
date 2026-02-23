@@ -7,7 +7,7 @@ interface LoadingStateProps {
 
 const steps = [
   { id: "pending", icon: Search, label: "Starting analysis..." },
-  { id: "fetching", icon: FileText, label: "Fetching Reddit discussions..." },
+  { id: "fetching", icon: FileText, label: "Fetching discussions across the web..." },
   { id: "analyzing", icon: BarChart3, label: "Analyzing sentiment..." },
   { id: "complete", icon: CheckCircle2, label: "Generating report..." },
 ];
@@ -32,7 +32,7 @@ const LoadingState = ({ productName, status = "pending" }: LoadingStateProps) =>
           Analyzing {productName}
         </h2>
         <p className="text-muted-foreground mb-8">
-          Gathering feedback from Reddit...
+          Gathering feedback from across the web...
         </p>
 
         {/* Steps */}

@@ -3,6 +3,11 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { RedditClient, RedditComment, RedditPost, searchSoftwareProduct, isMentionRelevant } from "./services/reddit";
 import { createGeminiClient } from "./services/gemini";
+import { HNStoryWithComments, searchSoftwareProductHN, HackerNewsClient } from "./services/hackernews";
+import { SOQuestionWithAnswers, searchSoftwareProductSO, StackOverflowClient } from "./services/stackoverflow";
+import { DevToArticleWithComments, searchSoftwareProductDevTo, DevToClient } from "./services/devto";
+
+type SourceName = "reddit" | "hackernews" | "stackoverflow" | "devto" | "g2";
 
 // ============================================================================
 // Simple Sentiment Analysis (fallback when Gemini unavailable)
@@ -63,7 +68,7 @@ function processRedditData(
     if (post.content && post.content.length > 50 && isMentionRelevant(post.content, productName)) {
       const sentiment = analyzeSentiment(post.content);
       mentions.push({
-        text: postText.slice(0, 500),
+        text: post.content.slice(0, 500),
         author: post.author,
         date: post.createdAt,
         url: post.permalink,
@@ -391,22 +396,97 @@ export const generateReport = action({
         status: "fetching",
       });
 
-      // Fetch Reddit data with software-focused search
-      const reddit = new RedditClient({ cacheTtlMs: 60000 });
-      const results = await searchSoftwareProduct(reddit, productName, {
-        postLimit: 25,
-        commentsPerPost: 25,
+      // Fetch from all sources in parallel
+      const allMentions: MentionWithSentiment[] = [];
+      const activeSourceNames: SourceName[] = [];
+
+      const [redditResults, hnResults, soResults, devtoResults] = await Promise.allSettled([
+        (async () => {
+          const reddit = new RedditClient({ cacheTtlMs: 60000, requestDelayMs: 150 });
+          return searchSoftwareProduct(reddit, productName, {
+            postLimit: 15,
+            commentsPerPost: 10,
+          });
+        })(),
+        (async () => {
+          const hn = new HackerNewsClient({ requestDelayMs: 100 });
+          return searchSoftwareProductHN(hn, productName, {
+            storyLimit: 8,
+            commentsPerStory: 10,
+          });
+        })(),
+        (async () => {
+          const so = new StackOverflowClient({ requestDelayMs: 100 });
+          return searchSoftwareProductSO(so, productName, {
+            questionLimit: 8,
+            answersPerQuestion: 10,
+          });
+        })(),
+        (async () => {
+          const devto = new DevToClient({ requestDelayMs: 100 });
+          return searchSoftwareProductDevTo(devto, productName, {
+            articleLimit: 5,
+          });
+        })(),
+      ]);
+
+      if (redditResults.status === "fulfilled") {
+        const mentions = processRedditData(redditResults.value, productName);
+        allMentions.push(...mentions);
+        if (mentions.length > 0) activeSourceNames.push("reddit");
+        console.log(`Reddit: ${mentions.length} relevant mentions from ${redditResults.value.length} posts`);
+      } else {
+        console.warn("Reddit fetch failed:", redditResults.reason);
+      }
+
+      if (hnResults.status === "fulfilled") {
+        const mentions = processHackerNewsData(hnResults.value);
+        allMentions.push(...mentions);
+        if (mentions.length > 0) activeSourceNames.push("hackernews");
+        console.log(`HackerNews: ${mentions.length} mentions`);
+      } else {
+        console.warn("HackerNews fetch failed:", hnResults.reason);
+      }
+
+      if (soResults.status === "fulfilled") {
+        const mentions = processStackOverflowData(soResults.value);
+        allMentions.push(...mentions);
+        if (mentions.length > 0) activeSourceNames.push("stackoverflow");
+        console.log(`StackOverflow: ${mentions.length} mentions`);
+      } else {
+        console.warn("StackOverflow fetch failed:", soResults.reason);
+      }
+
+      if (devtoResults.status === "fulfilled") {
+        const mentions = processDevToData(devtoResults.value);
+        allMentions.push(...mentions);
+        if (mentions.length > 0) activeSourceNames.push("devto");
+        console.log(`Dev.to: ${mentions.length} mentions`);
+      } else {
+        console.warn("Dev.to fetch failed:", devtoResults.reason);
+      }
+
+      // Deduplicate
+      const dedupedMentions = deduplicateMentions(allMentions);
+      const sourcesAnalyzed = activeSourceNames.length;
+      const sourceNames = activeSourceNames.map((s) => {
+        const labels: Record<SourceName, string> = {
+          reddit: "Reddit",
+          hackernews: "HackerNews",
+          stackoverflow: "Stack Overflow",
+          devto: "Dev.to",
+          g2: "G2",
+        };
+        return labels[s] || s;
       });
+
+      console.log(`Total: ${dedupedMentions.length} deduplicated mentions from ${sourcesAnalyzed} sources`);
 
       // Update status: analyzing
       await ctx.runMutation(internal.pipeline.updateReportStatus, {
         reportId,
         status: "analyzing",
       });
-
-      // Process mentions (per-mention relevance filtering applied inside)
-      const mentions = processRedditData(results, productName);
-      console.log(`Found ${mentions.length} relevant mentions for "${productName}" from ${results.length} posts`);
 
       // Try Gemini analysis, fall back to basic if unavailable
       let summary: string;
@@ -415,7 +495,7 @@ export const generateReport = action({
         title: string;
         description: string;
         frequency: number;
-        quotes: Array<{ text: string; source: "reddit" | "hackernews" | "stackoverflow" | "devto" | "g2"; author: string; date: string; url: string }>;
+        quotes: Array<{ text: string; source: SourceName; author: string; date: string; url: string }>;
       }>;
       let issues: typeof strengths;
       let aspects: Array<{ name: string; score: number; mentions: number; trend: "up" | "down" | "stable" }>;
@@ -430,11 +510,11 @@ export const generateReport = action({
 
           summary = analysis.summary;
           overallScore = analysis.overallScore;
-          const mentionUrlToSource = new Map(
+          const mentionUrlToSource = new Map<string, SourceName>(
             dedupedMentions.map((m) => [m.url, m.source])
           );
-          const lookupSource = (url: string) =>
-            mentionUrlToSource.get(url) || "reddit" as const;
+          const lookupSource = (url: string): SourceName =>
+            mentionUrlToSource.get(url) || "reddit";
 
           strengths = analysis.strengths.map((s) => ({
             ...s,
@@ -449,7 +529,6 @@ export const generateReport = action({
           console.log("Gemini analysis complete");
         } catch (error) {
           console.warn("Gemini analysis failed, using fallback:", error);
-          // Fall back to basic analysis
           summary = `Analysis of ${dedupedMentions.length} mentions from ${sourceNames.join(" and ") || "online sources"}.`;
           overallScore = calculateBasicScore(dedupedMentions);
           strengths = createBasicInsights(dedupedMentions, true);
@@ -457,9 +536,8 @@ export const generateReport = action({
           aspects = createBasicAspects(dedupedMentions);
         }
       } else {
-        // No Gemini key or no mentions - use basic analysis
         console.log("Using basic analysis (no Gemini key or no mentions)");
-        const positiveMentions = dedupedMentions.filter((m) => m.isPositive).length;
+        const positiveMentions = dedupedMentions.filter((m: MentionWithSentiment) => m.isPositive).length;
         const negativeMentions = dedupedMentions.length - positiveMentions;
 
         summary = dedupedMentions.length > 0
