@@ -178,6 +178,7 @@ const Index = () => {
     overallScore: r.overallScore ?? 50,
     totalMentions: r.totalMentions ?? 0,
     sourcesAnalyzed: r.sourcesAnalyzed ?? 1,
+    sourceBreakdown: r.sourceBreakdown ?? [],
     generatedAt: r.generatedAt,
     summary: r.summary ?? "Analysis in progress...",
     strengths: r.strengths ?? [],

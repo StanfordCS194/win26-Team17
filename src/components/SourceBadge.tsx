@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 
 interface SourceBadgeProps {
-  source: "reddit" | "hackernews" | "stackoverflow" | "devto" | "g2";
+  source: "reddit" | "hackernews" | "stackoverflow" | "devto";
   className?: string;
 }
 
@@ -26,11 +26,6 @@ const SourceBadge = ({ source, className }: SourceBadgeProps) => {
       label: "DEV",
       bgColor: "bg-indigo-100 dark:bg-indigo-900/30",
       textColor: "text-indigo-700 dark:text-indigo-400",
-    },
-    g2: {
-      label: "G2",
-      bgColor: "bg-red-100 dark:bg-red-900/30",
-      textColor: "text-red-700 dark:text-red-400",
     },
   };
 

@@ -1,6 +1,6 @@
 export interface Quote {
   text: string;
-  source: "reddit" | "hackernews" | "stackoverflow" | "devto" | "g2";
+  source: "reddit" | "hackernews" | "stackoverflow" | "devto";
   author: string;
   date: string;
   url: string;
@@ -20,11 +20,18 @@ export interface AspectScore {
   trend: "up" | "down" | "stable";
 }
 
+export interface SourceInfo {
+  name: string;
+  label: string;
+  mentions: number;
+}
+
 export interface ProductReport {
   productName: string;
   overallScore: number;
   totalMentions: number;
   sourcesAnalyzed: number;
+  sourceBreakdown: SourceInfo[];
   generatedAt: string;
   summary: string;
   strengths: Insight[];

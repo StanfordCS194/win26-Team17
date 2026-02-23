@@ -3,7 +3,7 @@ import { v } from "convex/values";
 
 const quoteValidator = v.object({
   text: v.string(),
-  source: v.union(v.literal("reddit"), v.literal("hackernews"), v.literal("stackoverflow"), v.literal("devto"), v.literal("g2")),
+  source: v.union(v.literal("reddit"), v.literal("hackernews"), v.literal("stackoverflow"), v.literal("devto")),
   author: v.string(),
   date: v.string(),
   url: v.string(),
@@ -36,6 +36,11 @@ export default defineSchema({
     overallScore: v.optional(v.number()),
     totalMentions: v.optional(v.number()),
     sourcesAnalyzed: v.optional(v.number()),
+    sourceBreakdown: v.optional(v.array(v.object({
+      name: v.string(),
+      label: v.string(),
+      mentions: v.number(),
+    }))),
     generatedAt: v.string(),
     summary: v.optional(v.string()),
     strengths: v.optional(v.array(insightValidator)),

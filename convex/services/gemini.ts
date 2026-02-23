@@ -245,7 +245,6 @@ export class GeminiClient {
       hackernews: "HackerNews (technical audience, developers and founders)",
       stackoverflow: "Stack Overflow (Q&A, developer-focused technical discussions)",
       devto: "Dev.to (developer blog posts and community articles)",
-      g2: "G2 (business software reviewers)",
     };
 
     const sourceLines = Object.entries(sourceBreakdown)
