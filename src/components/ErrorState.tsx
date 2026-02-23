@@ -36,11 +36,11 @@ function categorizeError(error: string | null): {
     };
   }
 
-  if (errorLower.includes("not found") || errorLower.includes("no data") || errorLower.includes("limited data")) {
+  if (errorLower.includes("not found") || errorLower.includes("no data") || errorLower.includes("no public discussions") || errorLower.includes("limited data")) {
     return {
       icon: <AlertTriangle className="w-12 h-12 text-amber-500" />,
       title: "No Data Found",
-      description: "We couldn't find enough discussions about this product. Try a more popular product name.",
+      description: error || "We couldn't find enough discussions about this product. Try a more specific software product name.",
       canRetry: false,
     };
   }
