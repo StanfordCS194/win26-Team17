@@ -66,11 +66,16 @@ If any stage fails, the pipeline catches the error and sets status to `"error"` 
 
 Fetches public Reddit data via RSS feeds (no API key required).
 
-- Searches software-focused subreddits first (r/software, r/SaaS, r/productivity)
-- Falls back to general Reddit search with queries like "{product} review", "{product} vs"
-- Fetches up to 10 posts with up to 20 comments each
-- Filters results using fuzzy product name matching and software keyword detection
-- Deduplicates posts by ID across multiple search queries
+Search proceeds in three phases, stopping early once the post limit is reached:
+
+1. **Product-specific subreddits** (highest signal): Checks a hardcoded `PRODUCT_SUBREDDITS` map for known products (e.g., "notion" -> r/Notion, r/NotionSo). If no hardcoded match exists, candidate subreddit names are auto-generated from the product name by removing spaces and producing progressively shorter prefixes (e.g., "iPhone 15 Pro" -> r/iPhone15Pro, r/iphone15pro, r/iPhone15, r/iphone). This ensures the pipeline always attempts to find the product's dedicated subreddit.
+2. **Software-focused subreddits** (broader net): Searches the first 6 of a general subreddit list (r/software, r/SaaS, r/productivity, etc.).
+3. **Targeted queries** (widest net): Searches all of Reddit with queries like "{product} review", "{product} vs", "{product} alternative".
+
+Post-search filtering:
+- Posts are kept only if the title or content fuzzy-matches the product name
+- Comments within relevant posts are filtered to those that mention the product
+- Posts are deduplicated by ID across all search phases
 
 **Input:** Product name (string)
 **Output:** Array of `{ post, comments[] }` objects

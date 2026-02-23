@@ -403,6 +403,36 @@ const PRODUCT_SUBREDDITS: Record<string, string[]> = {
   netflix: ["netflix"],
 };
 
+// Generate candidate subreddit names from a product name.
+// e.g. "iPhone 15 Pro" -> ["iPhone15Pro", "iphone15pro", "iPhone15", "iphone"]
+function generateSubredditCandidates(productName: string): string[] {
+  const words = productName.trim().split(/\s+/);
+  const candidates: string[] = [];
+  const seen = new Set<string>();
+
+  const add = (name: string) => {
+    const lower = name.toLowerCase();
+    if (name.length > 1 && !seen.has(lower)) {
+      seen.add(lower);
+      candidates.push(name);
+    }
+  };
+
+  // Full name with spaces removed (preserving original casing)
+  add(words.join(""));
+
+  // Full name lowercased with spaces removed
+  add(words.join("").toLowerCase());
+
+  // Progressive word combinations from the start: "iPhone15", "iPhone"
+  for (let i = words.length - 1; i >= 1; i--) {
+    add(words.slice(0, i).join(""));
+    add(words.slice(0, i).join("").toLowerCase());
+  }
+
+  return candidates;
+}
+
 function getProductSubreddits(productName: string): string[] {
   const key = productName.toLowerCase().trim();
   const exact = PRODUCT_SUBREDDITS[key];
@@ -410,7 +440,9 @@ function getProductSubreddits(productName: string): string[] {
   for (const [k, v] of Object.entries(PRODUCT_SUBREDDITS)) {
     if (key.includes(k) || k.includes(key)) return v;
   }
-  return [];
+
+  // No hardcoded match -- generate candidate subreddit names from the product name
+  return generateSubredditCandidates(productName);
 }
 
 // Keywords that indicate software/product discussion
