@@ -78,9 +78,9 @@ const SearchHero = ({ onSearch, isLoading }: SearchHeroProps) => {
 
         {/* Subheadline */}
         <p className="text-lg md:text-xl text-muted-foreground mb-10 max-w-2xl mx-auto animate-fade-up animation-delay-200">
-          Transform scattered feedback from Reddit, HackerNews, G2, and forums into
-          actionable insights in under 5 minutes. Evidence-backed analysis for
-          confident product decisions.
+          Transform scattered feedback from Reddit, HackerNews, Stack Overflow, Dev.to,
+          and G2 into actionable insights in under 5 minutes. Evidence-backed analysis
+          for confident product decisions.
         </p>
 
         {/* Search Form */}
@@ -156,7 +156,7 @@ const SearchHero = ({ onSearch, isLoading }: SearchHeroProps) => {
       <div className="mt-16 grid grid-cols-3 gap-8 md:gap-16 text-center animate-fade-up animation-delay-500">
         <div>
           <div className="text-2xl md:text-3xl font-bold text-foreground">
-            2+
+            4+
           </div>
           <div className="text-sm text-muted-foreground">Sources Analyzed</div>
         </div>

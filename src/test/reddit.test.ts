@@ -398,6 +398,48 @@ describe("Reddit RSS Client", () => {
     });
   });
 
+  describe("error class", () => {
+    it("should expose statusCode and retryable properties", async () => {
+      const { RedditApiError } = await import("../../convex/services/reddit");
+
+      const err = new RedditApiError("Rate limited", 429, true);
+      expect(err.message).toBe("Rate limited");
+      expect(err.statusCode).toBe(429);
+      expect(err.retryable).toBe(true);
+      expect(err.name).toBe("RedditApiError");
+      expect(err instanceof Error).toBe(true);
+    });
+
+    it("should default retryable to false", async () => {
+      const { RedditApiError } = await import("../../convex/services/reddit");
+
+      const err = new RedditApiError("Not found", 404);
+      expect(err.retryable).toBe(false);
+    });
+  });
+
+  describe("retry exhaustion", () => {
+    beforeEach(() => {
+      vi.stubGlobal("fetch", vi.fn());
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      vi.resetModules();
+    });
+
+    it("should throw after exhausting all retries on 429", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({ ok: false, status: 429 });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const { createRedditClient, RedditApiError } = await import("../../convex/services/reddit");
+      const client = createRedditClient({ maxRetries: 1, retryDelayMs: 10, cacheTtlMs: 0 });
+
+      await expect(client.searchPosts("test")).rejects.toThrow(RedditApiError);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+  });
+
   // Integration tests - run manually with: npm test -- --run reddit.test.ts
   describe.skip("Integration Tests (hit real Reddit RSS)", () => {
     it("should search for real posts", async () => {

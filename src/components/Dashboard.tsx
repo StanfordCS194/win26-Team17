@@ -246,7 +246,7 @@ const Dashboard = ({ report, reportId, onBack, onRefresh, isRefreshing }: Dashbo
         <div className="mt-12 pt-8 border-t border-border text-center">
           <p className="text-sm text-muted-foreground">
             This report was generated using AI-powered analysis of public feedback from
-            Reddit, HackerNews, and G2. All insights are backed by direct user quotes.
+            Reddit, HackerNews, Stack Overflow, Dev.to, and G2. All insights are backed by direct user quotes.
           </p>
         </div>
       </div>

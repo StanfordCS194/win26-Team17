@@ -355,6 +355,26 @@ describe("HackerNews Algolia Client", () => {
     });
   });
 
+  describe("error class", () => {
+    it("should expose statusCode and retryable properties", async () => {
+      const { HackerNewsApiError } = await import("../../convex/services/hackernews");
+
+      const err = new HackerNewsApiError("Rate limited", 429, true);
+      expect(err.message).toBe("Rate limited");
+      expect(err.statusCode).toBe(429);
+      expect(err.retryable).toBe(true);
+      expect(err.name).toBe("HackerNewsApiError");
+      expect(err instanceof Error).toBe(true);
+    });
+
+    it("should default retryable to false", async () => {
+      const { HackerNewsApiError } = await import("../../convex/services/hackernews");
+
+      const err = new HackerNewsApiError("Not found", 404);
+      expect(err.retryable).toBe(false);
+    });
+  });
+
   describe("interface contract", () => {
     it("should implement IHackerNewsClient interface", async () => {
       const { createHackerNewsClient, HackerNewsClient } = await import(

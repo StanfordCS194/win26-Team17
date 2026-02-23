@@ -3,6 +3,8 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { RedditClient, RedditComment, RedditPost, searchSoftwareProduct } from "./services/reddit";
 import { HNStoryWithComments, createHackerNewsClient, searchSoftwareProductHN } from "./services/hackernews";
+import { SOQuestionWithAnswers, createStackOverflowClient, searchSoftwareProductSO } from "./services/stackoverflow";
+import { DevToArticleWithComments, createDevToClient, searchSoftwareProductDevTo } from "./services/devto";
 import { createGeminiClient } from "./services/gemini";
 
 // ============================================================================
@@ -51,7 +53,7 @@ interface MentionWithSentiment {
   url: string;
   score: number;
   isPositive: boolean;
-  source: "reddit" | "hackernews" | "g2";
+  source: "reddit" | "hackernews" | "stackoverflow" | "devto" | "g2";
 }
 
 function processRedditData(
@@ -139,6 +141,84 @@ function processHackerNewsData(
   return mentions;
 }
 
+function processStackOverflowData(
+  questions: SOQuestionWithAnswers[]
+): MentionWithSentiment[] {
+  const mentions: MentionWithSentiment[] = [];
+
+  for (const { question, answers } of questions) {
+    const questionText = question.body || question.title;
+    if (questionText && questionText.length > 30) {
+      const sentiment = analyzeSentiment(questionText);
+      mentions.push({
+        text: questionText.slice(0, 500),
+        author: question.author,
+        date: question.createdAt,
+        url: question.url,
+        score: sentiment.score,
+        isPositive: sentiment.isPositive,
+        source: "stackoverflow",
+      });
+    }
+
+    for (const answer of answers) {
+      if (answer.body && answer.body.length > 30) {
+        const sentiment = analyzeSentiment(answer.body);
+        mentions.push({
+          text: answer.body.slice(0, 500),
+          author: answer.author,
+          date: answer.createdAt,
+          url: `https://stackoverflow.com/a/${answer.id}`,
+          score: sentiment.score,
+          isPositive: sentiment.isPositive,
+          source: "stackoverflow",
+        });
+      }
+    }
+  }
+
+  return mentions;
+}
+
+function processDevToData(
+  articles: DevToArticleWithComments[]
+): MentionWithSentiment[] {
+  const mentions: MentionWithSentiment[] = [];
+
+  for (const { article, comments } of articles) {
+    const articleText = article.body || `${article.title}. ${article.description}`;
+    if (articleText && articleText.length > 30) {
+      const sentiment = analyzeSentiment(articleText);
+      mentions.push({
+        text: articleText.slice(0, 500),
+        author: article.author,
+        date: article.publishedAt,
+        url: article.url,
+        score: sentiment.score,
+        isPositive: sentiment.isPositive,
+        source: "devto",
+      });
+    }
+
+    for (const comment of comments) {
+      if (comment.body && comment.body.length > 30) {
+        const sentiment = analyzeSentiment(comment.body);
+        mentions.push({
+          text: comment.body.slice(0, 500),
+          author: comment.author,
+          date: comment.createdAt,
+          url: article.url,
+          score: sentiment.score,
+          isPositive: sentiment.isPositive,
+          source: "devto",
+        });
+      }
+    }
+  }
+
+  return mentions;
+}
+
 // Deduplicate near-identical mentions (same text within first 100 chars)
 function deduplicateMentions(mentions: MentionWithSentiment[]): MentionWithSentiment[] {
   const seen = new Set<string>();
@@ -176,7 +256,7 @@ function createBasicInsights(mentions: MentionWithSentiment[], isPositive: boole
     frequency: filtered.length,
     quotes: topMentions.map((m) => ({
       text: m.text,
-      source: m.source as "reddit" | "hackernews" | "g2",
+      source: m.source as "reddit" | "hackernews" | "stackoverflow" | "devto" | "g2",
       author: m.author,
       date: m.date,
       url: m.url,
@@ -254,7 +334,7 @@ export const saveReportResults = internalMutation({
         quotes: v.array(
           v.object({
             text: v.string(),
-            source: v.union(v.literal("reddit"), v.literal("hackernews"), v.literal("g2")),
+            source: v.union(v.literal("reddit"), v.literal("hackernews"), v.literal("stackoverflow"), v.literal("devto"), v.literal("g2")),
             author: v.string(),
             date: v.string(),
             url: v.string(),
@@ -270,7 +350,7 @@ export const saveReportResults = internalMutation({
         quotes: v.array(
           v.object({
             text: v.string(),
-            source: v.union(v.literal("reddit"), v.literal("hackernews"), v.literal("g2")),
+            source: v.union(v.literal("reddit"), v.literal("hackernews"), v.literal("stackoverflow"), v.literal("devto"), v.literal("g2")),
             author: v.string(),
             date: v.string(),
             url: v.string(),
@@ -321,7 +401,7 @@ export const generateReport = action({
       });
 
       // Fetch data from multiple sources in parallel
-      const [redditResult, hnResult] = await Promise.allSettled([
+      const [redditResult, hnResult, soResult, devtoResult] = await Promise.allSettled([
         (async () => {
           const reddit = new RedditClient({ cacheTtlMs: 60000 });
           const results = await searchSoftwareProduct(reddit, productName, {
@@ -337,6 +417,21 @@ export const generateReport = action({
             commentsPerStory: 20,
           });
           return processHackerNewsData(results);
+        })(),
+        (async () => {
+          const so = createStackOverflowClient({ cacheTtlMs: 60000 });
+          const results = await searchSoftwareProductSO(so, productName, {
+            questionLimit: 10,
+            answersPerQuestion: 20,
+          });
+          return processStackOverflowData(results);
+        })(),
+        (async () => {
+          const devto = createDevToClient({ cacheTtlMs: 60000 });
+          const results = await searchSoftwareProductDevTo(devto, productName, {
+            articleLimit: 10,
+          });
+          return processDevToData(results);
         })(),
       ]);
 
@@ -365,6 +460,26 @@ export const generateReport = action({
         console.warn("HackerNews fetch failed:", hnResult.reason);
       }
 
+      if (soResult.status === "fulfilled") {
+        mentions.push(...soResult.value);
+        if (soResult.value.length > 0) {
+          sourcesAnalyzed++;
+          sourceNames.push("StackOverflow");
+        }
+      } else {
+        console.warn("StackOverflow fetch failed:", soResult.reason);
+      }
+
+      if (devtoResult.status === "fulfilled") {
+        mentions.push(...devtoResult.value);
+        if (devtoResult.value.length > 0) {
+          sourcesAnalyzed++;
+          sourceNames.push("Dev.to");
+        }
+      } else {
+        console.warn("Dev.to fetch failed:", devtoResult.reason);
+      }
+
       // Deduplicate before analysis
       const dedupedMentions = deduplicateMentions(mentions);
       if (dedupedMentions.length < mentions.length) {
@@ -384,7 +499,7 @@ export const generateReport = action({
         title: string;
         description: string;
         frequency: number;
-        quotes: Array<{ text: string; source: "reddit" | "hackernews" | "g2"; author: string; date: string; url: string }>;
+        quotes: Array<{ text: string; source: "reddit" | "hackernews" | "stackoverflow" | "devto" | "g2"; author: string; date: string; url: string }>;
       }>;
       let issues: typeof strengths;
       let aspects: Array<{ name: string; score: number; mentions: number; trend: "up" | "down" | "stable" }>;
