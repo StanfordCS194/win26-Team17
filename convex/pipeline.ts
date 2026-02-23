@@ -169,25 +169,47 @@ export const generateReport = action({
   handler: async (ctx, args): Promise<void> => {
     const { reportId, productName } = args;
 
+    const pipelineStart = Date.now();
+    const tag = `[pipeline:${productName}]`;
+
+    const elapsed = (since: number) => `${((Date.now() - since) / 1000).toFixed(1)}s`;
+
+    console.log(`${tag} Starting analysis pipeline`);
+
     try {
       // ----------------------------------------------------------------
       // STAGE 1: COLLECT -- Fetch Reddit posts and comments
       // ----------------------------------------------------------------
+      const stage1Start = Date.now();
+      console.log(`${tag} [1/6 COLLECT] Fetching Reddit data...`);
+
       await ctx.runMutation(internal.pipeline.updateReportStatus, {
         reportId,
         status: "fetching",
       });
 
-      const reddit = new RedditClient({ cacheTtlMs: 60000 });
+      const reddit = new RedditClient({
+        cacheTtlMs: 60000,
+        requestDelayMs: 3000,
+        retryDelayMs: 30000,
+        maxRetries: 3,
+      });
       const results = await searchSoftwareProduct(reddit, productName, {
         postLimit: 10,
         commentsPerPost: 20,
       });
 
       const rawMentions = extractMentions(results);
+      const totalPosts = results.length;
+      const totalComments = results.reduce((sum, r) => sum + r.comments.length, 0);
+      console.log(
+        `${tag} [1/6 COLLECT] Done in ${elapsed(stage1Start)} -- ` +
+          `${totalPosts} posts, ${totalComments} comments, ${rawMentions.length} raw mentions`
+      );
 
       // Handle empty results early
       if (rawMentions.length === 0) {
+        console.log(`${tag} No mentions found -- setting error status`);
         await ctx.runMutation(internal.pipeline.updateReportStatus, {
           reportId,
           status: "error",
@@ -199,14 +221,24 @@ export const generateReport = action({
       // ----------------------------------------------------------------
       // STAGE 2: PREPROCESS -- Deduplicate content
       // ----------------------------------------------------------------
+      const stage2Start = Date.now();
+      console.log(`${tag} [2/6 PREPROCESS] Deduplicating mentions...`);
+
       const dedupedMentions = deduplicateMentions(rawMentions);
+      const removedCount = rawMentions.length - dedupedMentions.length;
       console.log(
-        `Deduplication: ${rawMentions.length} raw -> ${dedupedMentions.length} unique mentions`
+        `${tag} [2/6 PREPROCESS] Done in ${elapsed(stage2Start)} -- ` +
+          `${rawMentions.length} raw -> ${dedupedMentions.length} unique (${removedCount} duplicates removed)`
       );
 
       // ----------------------------------------------------------------
       // STAGE 3: CLASSIFY -- Per-mention sentiment + aspect labels
       // ----------------------------------------------------------------
+      const stage3Start = Date.now();
+      console.log(
+        `${tag} [3/6 CLASSIFY] Classifying ${dedupedMentions.length} mentions...`
+      );
+
       await ctx.runMutation(internal.pipeline.updateReportStatus, {
         reportId,
         status: "classifying",
@@ -220,33 +252,67 @@ export const generateReport = action({
       const relevantMentions = classifiedMentions.filter(
         (m) => m.classification.relevant
       );
+      const sentimentCounts = {
+        positive: classifiedMentions.filter(
+          (m) => m.classification.sentiment === "positive"
+        ).length,
+        neutral: classifiedMentions.filter(
+          (m) => m.classification.sentiment === "neutral"
+        ).length,
+        negative: classifiedMentions.filter(
+          (m) => m.classification.sentiment === "negative"
+        ).length,
+      };
       console.log(
-        `Classification: ${classifiedMentions.length} classified, ${relevantMentions.length} relevant`
+        `${tag} [3/6 CLASSIFY] Done in ${elapsed(stage3Start)} -- ` +
+          `${classifiedMentions.length} classified, ${relevantMentions.length} relevant ` +
+          `(+${sentimentCounts.positive} ~${sentimentCounts.neutral} -${sentimentCounts.negative})`
       );
 
       // ----------------------------------------------------------------
       // STAGE 4: AGGREGATE -- Deterministic score computation
       // ----------------------------------------------------------------
+      const stage4Start = Date.now();
+      console.log(`${tag} [4/6 AGGREGATE] Computing scores...`);
+
       await ctx.runMutation(internal.pipeline.updateReportStatus, {
         reportId,
         status: "analyzing",
       });
 
       const scores = computeAllScores(classifiedMentions);
+      const aspectSummary = scores.aspects
+        .map((a) => `${a.name}=${a.score}`)
+        .join(", ");
+      console.log(
+        `${tag} [4/6 AGGREGATE] Done in ${elapsed(stage4Start)} -- ` +
+          `overall=${scores.overallScore}, aspects: [${aspectSummary}], ` +
+          `confidence=${(scores.confidence.overall * 100).toFixed(0)}%`
+      );
 
       // ----------------------------------------------------------------
       // STAGE 5: SYNTHESIZE -- LLM generates narrative insights
       // ----------------------------------------------------------------
+      const stage5Start = Date.now();
+      console.log(`${tag} [5/6 SYNTHESIZE] Generating report narrative...`);
+
       const report = await synthesizeReport(
         ctx,
         productName,
         relevantMentions,
         scores
       );
+      console.log(
+        `${tag} [5/6 SYNTHESIZE] Done in ${elapsed(stage5Start)} -- ` +
+          `${report.strengths.length} strengths, ${report.issues.length} issues`
+      );
 
       // ----------------------------------------------------------------
       // STAGE 6: ASSEMBLE -- Save to database
       // ----------------------------------------------------------------
+      const stage6Start = Date.now();
+      console.log(`${tag} [6/6 ASSEMBLE] Saving report to database...`);
+
       await ctx.runMutation(internal.pipeline.saveReportResults, {
         reportId,
         overallScore: scores.overallScore,
@@ -259,8 +325,20 @@ export const generateReport = action({
         issueRadar: scores.issueRadar,
         confidence: scores.confidence,
       });
+
+      console.log(
+        `${tag} [6/6 ASSEMBLE] Done in ${elapsed(stage6Start)}`
+      );
+      console.log(
+        `${tag} Pipeline complete in ${elapsed(pipelineStart)} -- ` +
+          `score=${scores.overallScore}, mentions=${relevantMentions.length}, ` +
+          `strengths=${report.strengths.length}, issues=${report.issues.length}`
+      );
     } catch (error) {
-      console.error("Pipeline error:", error);
+      console.error(
+        `${tag} Pipeline failed after ${elapsed(pipelineStart)}:`,
+        error
+      );
       await ctx.runMutation(internal.pipeline.updateReportStatus, {
         reportId,
         status: "error",

@@ -501,7 +501,7 @@ export async function searchSoftwareProduct(
   productName: string,
   options: SoftwareSearchOptions = {}
 ): Promise<RedditPostWithComments[]> {
-  const { postLimit = 15, commentsPerPost = 10, includeGenericSearch = true } = options;
+  const { postLimit = 25, commentsPerPost = 25, includeGenericSearch = true } = options;
   const allResults: RedditPostWithComments[] = [];
   const seenPostIds = new Set<string>();
 
@@ -518,12 +518,12 @@ export async function searchSoftwareProduct(
 
   // 1. Search product-specific subreddits first (highest signal)
   const productSubs = getProductSubreddits(productName);
-  for (const subreddit of productSubs.slice(0, 2)) {
+  for (const subreddit of productSubs) {
     if (allResults.length >= postLimit) break;
     try {
       const results = await client.searchWithComments(productName, {
         subreddit,
-        postLimit: 5,
+        postLimit: 10,
         commentsPerPost,
       });
       addResults(results);
@@ -533,7 +533,7 @@ export async function searchSoftwareProduct(
   }
 
   // 2. Search software-focused subreddits (broader net)
-  for (const subreddit of SOFTWARE_SUBREDDITS.slice(0, 3)) {
+  for (const subreddit of SOFTWARE_SUBREDDITS.slice(0, 6)) {
     if (allResults.length >= postLimit) break;
     try {
       const results = await client.searchWithComments(productName, {
@@ -549,11 +549,11 @@ export async function searchSoftwareProduct(
 
   // 3. Targeted queries across all of Reddit
   if (allResults.length < postLimit && includeGenericSearch) {
-    for (const query of queries.slice(0, 2)) {
+    for (const query of queries.slice(0, 4)) {
       if (allResults.length >= postLimit) break;
       try {
         const results = await client.searchWithComments(query, {
-          postLimit: 5,
+          postLimit: 10,
           commentsPerPost,
         });
         addResults(results);

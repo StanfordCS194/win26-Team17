@@ -94,7 +94,7 @@ function getModel() {
 
 const classifierAgent = new Agent(components.agent, {
   name: "mention-classifier",
-  model: getModel(),
+  languageModel: getModel(),
   instructions: `You are a product feedback classifier. For each user mention about a product, determine:
 
 1. Sentiment: positive, neutral, or negative
@@ -113,7 +113,7 @@ Aspect definitions:
 
 const synthesizerAgent = new Agent(components.agent, {
   name: "report-synthesizer",
-  model: getModel(),
+  languageModel: getModel(),
   instructions: `You summarize product feedback data into executive reports. You receive pre-classified mention data with sentiment labels and aspect tags. Your job is to:
 
 1. Identify 2-4 distinct positive themes (strengths)
