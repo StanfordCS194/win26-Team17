@@ -265,31 +265,43 @@ Fix these issues in this attempt:
 `;
     }
 
-    return `You are analyzing user feedback about "${productName}" gathered from multiple online communities.
+    // Prepare mentions for the prompt (limit to avoid token limits)
+    const limitedMentions = mentions.slice(0, 50).map((m, i) => ({
+      id: i,
+      text: m.text.slice(0, 400),
+      author: m.author,
+      sentiment: m.isPositive ? "positive" : "negative",
+    }));
 
-Source breakdown:
-${sourceLines}
+    const prompt = `You are analyzing user feedback about the product "${productName}" from Reddit.
+
+IMPORTANT: Some mentions may be off-topic, irrelevant, or not actually about "${productName}".
+Before using a mention, verify it is genuinely discussing "${productName}" (the specific product/service).
+Completely IGNORE mentions that:
+- Are about a different product, person, or topic that happens to share a similar name
+- Do not contain any actionable feedback about "${productName}"
+- Are generic comments, memes, or jokes with no product insight
 
 Here are ${limitedMentions.length} user mentions (out of ${totalMentions} total):
 
 ${JSON.stringify(limitedMentions, null, 2)}
-${retryInstructions}
-Analyze this feedback and return a JSON object with this exact structure:
+
+Analyze ONLY the relevant feedback and return a JSON object with this exact structure:
 {
-  "summary": "2-3 sentence executive summary of overall user sentiment. Note if different communities have different perspectives.",
+  "summary": "2-3 sentence executive summary of overall user sentiment about ${productName}",
   "overallScore": <number 0-100, where 100 is extremely positive>,
   "strengths": [
     {
-      "title": "Short specific title (3-5 words, NOT generic like 'User Feedback')",
-      "description": "One sentence description grounded in actual user quotes",
-      "mentionIds": [<ids of mentions that support this>]
+      "title": "Short title (3-5 words)",
+      "description": "One sentence description",
+      "mentionIds": [<ids of relevant mentions that support this>]
     }
   ],
   "issues": [
     {
-      "title": "Short specific title (3-5 words, NOT generic like 'Areas for Improvement')",
-      "description": "One sentence description grounded in actual user quotes",
-      "mentionIds": [<ids of mentions that support this>]
+      "title": "Short title (3-5 words)",
+      "description": "One sentence description",
+      "mentionIds": [<ids of relevant mentions that support this>]
     }
   ],
   "aspects": [
@@ -300,12 +312,12 @@ Analyze this feedback and return a JSON object with this exact structure:
 }
 
 Rules:
+- Only reference mentionIds of mentions that are genuinely about "${productName}"
 - Identify 2-4 distinct strengths (positive themes)
 - Identify 2-4 distinct issues (negative themes/complaints)
-- Each strength/issue MUST have a specific, descriptive title based on what users actually said
-- Reference specific mentionIds that support each insight (aim to cover most mentions)
-- If communities disagree (e.g. Reddit positive but HN negative), note it in the summary
+- Each strength/issue should have specific, descriptive titles (not generic like "User Feedback")
 - Be accurate to what users actually said
+- If very few mentions are truly relevant, say so in the summary and adjust the score accordingly
 - Return ONLY valid JSON, no other text`;
   }
 

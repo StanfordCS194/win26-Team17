@@ -365,7 +365,124 @@ const SOFTWARE_SUBREDDITS = [
   "startups",
   "Entrepreneur",
   "smallbusiness",
+  "technology",
+  "techsupport",
+  "apps",
+  "Android",
+  "iphone",
+  "mac",
+  "windows",
 ];
+
+// Map well-known products to their dedicated subreddits
+const PRODUCT_SUBREDDITS: Record<string, string[]> = {
+  notion: ["Notion", "NotionSo"],
+  slack: ["Slack"],
+  figma: ["FigmaDesign", "figma"],
+  discord: ["discordapp"],
+  linear: ["linear"],
+  obsidian: ["ObsidianMD"],
+  todoist: ["todoist"],
+  clickup: ["clickup"],
+  asana: ["asana"],
+  trello: ["trello"],
+  airtable: ["Airtable"],
+  monday: ["mondaydotcom"],
+  jira: ["jira"],
+  github: ["github"],
+  vscode: ["vscode"],
+  bitcoin: ["Bitcoin", "CryptoCurrency", "BitcoinBeginners"],
+  ethereum: ["ethereum", "CryptoCurrency"],
+  chatgpt: ["ChatGPT", "OpenAI"],
+  cursor: ["cursor"],
+  stripe: ["stripe"],
+  shopify: ["shopify"],
+  zoom: ["Zoom"],
+  teams: ["MicrosoftTeams"],
+  spotify: ["spotify"],
+  netflix: ["netflix"],
+};
+
+function getProductSubreddits(productName: string): string[] {
+  const key = productName.toLowerCase().trim();
+  const exact = PRODUCT_SUBREDDITS[key];
+  if (exact) return exact;
+  for (const [k, v] of Object.entries(PRODUCT_SUBREDDITS)) {
+    if (key.includes(k) || k.includes(key)) return v;
+  }
+  return [];
+}
+
+// Keywords that indicate software/product discussion
+const SOFTWARE_KEYWORDS = [
+  "app", "software", "tool", "platform", "service", "product",
+  "feature", "pricing", "subscription", "free tier", "alternative",
+  "review", "compared", "vs", "switched", "migrated", "using",
+  "workflow", "integration", "api", "plugin", "extension",
+  "saas", "cloud", "web", "mobile", "desktop", "browser",
+  "ux", "ui", "design", "dashboard", "login", "account",
+];
+
+// Fuzzy match: check if text contains product name with common variations
+function fuzzyMatchProduct(text: string, productName: string): boolean {
+  const lower = text.toLowerCase();
+  const productLower = productName.toLowerCase();
+  const productWords = productLower.split(/\s+/);
+
+  // Exact match
+  if (lower.includes(productLower)) return true;
+
+  // Match individual words for multi-word product names
+  if (productWords.length > 1) {
+    const allWordsMatch = productWords.every(word => lower.includes(word));
+    if (allWordsMatch) return true;
+  }
+
+  // Common variations: possessive, plural, hyphenated
+  const variations = [
+    productLower + "'s",      // Notion's
+    productLower + "s",       // Notions (typo/plural)
+    productLower + "'",       // Slack'
+    productLower.replace(/\s+/g, "-"), // multi-word hyphenated
+    productLower.replace(/\s+/g, ""),  // multi-word combined
+  ];
+
+  for (const variant of variations) {
+    if (lower.includes(variant)) return true;
+  }
+
+  // Levenshtein-lite: allow 1 character difference for longer names (>4 chars)
+  if (productLower.length > 4) {
+    const words = lower.split(/\s+/);
+    for (const word of words) {
+      if (word.length >= productLower.length - 1 && word.length <= productLower.length + 1) {
+        let diff = 0;
+        const minLen = Math.min(word.length, productLower.length);
+        for (let i = 0; i < minLen; i++) {
+          if (word[i] !== productLower[i]) diff++;
+        }
+        diff += Math.abs(word.length - productLower.length);
+        if (diff <= 1) return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+// Check if content is likely about software (not action figures, games, etc.)
+function isLikelySoftwareContent(text: string, productName: string): boolean {
+  const lower = text.toLowerCase();
+
+  // Must mention the product (with fuzzy matching)
+  if (!fuzzyMatchProduct(lower, productName)) return false;
+
+  // Check for software-related keywords
+  const keywordMatches = SOFTWARE_KEYWORDS.filter(kw => lower.includes(kw)).length;
+
+  // At least 2 software keywords = likely relevant
+  return keywordMatches >= 2;
+}
 
 // Generate search queries that target software discussions
 function generateSoftwareQueries(productName: string): string[] {
@@ -385,97 +502,91 @@ export interface SoftwareSearchOptions {
   includeGenericSearch?: boolean;
 }
 
+// Check if a single mention (post or comment text) is relevant to the product
+export function isMentionRelevant(text: string, productName: string): boolean {
+  return fuzzyMatchProduct(text.toLowerCase(), productName);
+}
+
 // Search specifically for software product feedback
 export async function searchSoftwareProduct(
   client: IRedditClient,
   productName: string,
   options: SoftwareSearchOptions = {}
 ): Promise<RedditPostWithComments[]> {
-  const { postLimit = 10, commentsPerPost = 20, includeGenericSearch = true } = options;
+  const { postLimit = 25, commentsPerPost = 25, includeGenericSearch = true } = options;
   const allResults: RedditPostWithComments[] = [];
   const seenPostIds = new Set<string>();
 
-  const queries = generateSoftwareQueries(productName);
-
-  // Search product-specific subreddit first (e.g., r/Notion, r/Slack)
-  const productSub = productName.replace(/\s+/g, "").toLowerCase();
-  try {
-    const results = await client.searchWithComments(productName, {
-      subreddit: productSub,
-      postLimit: 5,
-      commentsPerPost,
-    });
+  const addResults = (results: RedditPostWithComments[]) => {
     for (const result of results) {
       if (!seenPostIds.has(result.post.id)) {
         seenPostIds.add(result.post.id);
         allResults.push(result);
       }
     }
-  } catch {
-    // Product-specific subreddit may not exist, that's fine
+  };
+
+  const queries = generateSoftwareQueries(productName);
+
+  // 1. Search product-specific subreddits first (highest signal)
+  const productSubs = getProductSubreddits(productName);
+  for (const subreddit of productSubs) {
+    if (allResults.length >= postLimit) break;
+    try {
+      const results = await client.searchWithComments(productName, {
+        subreddit,
+        postLimit: 10,
+        commentsPerPost,
+      });
+      addResults(results);
+    } catch (error) {
+      console.warn(`Failed to search r/${subreddit}:`, error);
+    }
   }
 
-  // Search software-focused subreddits
-  for (const subreddit of SOFTWARE_SUBREDDITS.slice(0, 3)) {
+  // 2. Search software-focused subreddits (broader net)
+  for (const subreddit of SOFTWARE_SUBREDDITS.slice(0, 6)) {
+    if (allResults.length >= postLimit) break;
     try {
       const results = await client.searchWithComments(productName, {
         subreddit,
         postLimit: 5,
         commentsPerPost,
       });
-
-      for (const result of results) {
-        if (!seenPostIds.has(result.post.id)) {
-          seenPostIds.add(result.post.id);
-          allResults.push(result);
-        }
-      }
+      addResults(results);
     } catch (error) {
-      // Subreddit might not exist or be private, skip it
       console.warn(`Failed to search r/${subreddit}:`, error);
     }
-
-    if (allResults.length >= postLimit) break;
   }
 
-  // If we need more results, do targeted queries across Reddit
+  // 3. Targeted queries across all of Reddit
   if (allResults.length < postLimit && includeGenericSearch) {
-    for (const query of queries.slice(0, 2)) {
+    for (const query of queries.slice(0, 4)) {
+      if (allResults.length >= postLimit) break;
       try {
         const results = await client.searchWithComments(query, {
-          postLimit: 5,
+          postLimit: 10,
           commentsPerPost,
         });
-
-        for (const result of results) {
-          if (!seenPostIds.has(result.post.id)) {
-            seenPostIds.add(result.post.id);
-            allResults.push(result);
-          }
-        }
+        addResults(results);
       } catch (error) {
         console.warn(`Failed to search "${query}":`, error);
       }
-
-      if (allResults.length >= postLimit) break;
     }
   }
 
-  // Filter to keep only software-relevant content
-  const filtered = allResults.filter(({ post, comments }) => {
-    const postRelevant = isLikelySoftwareContent(post.title + " " + post.content, productName);
-    const hasRelevantComments = comments.some(c =>
-      isLikelySoftwareContent(c.content, productName)
-    );
-    return postRelevant || hasRelevantComments;
+  // 4. Filter posts: keep posts where at least the title/content mentions the product
+  const filtered = allResults.filter(({ post }) => {
+    return fuzzyMatchProduct((post.title + " " + post.content).toLowerCase(), productName);
   });
 
-  // If filtering removed too much, return unfiltered but limited
-  if (filtered.length < 3 && allResults.length > 0) {
-    return allResults.slice(0, postLimit);
-  }
+  // 5. Within each post, filter comments to only keep relevant ones
+  const withFilteredComments = filtered.map(({ post, comments }) => ({
+    post,
+    comments: comments.filter((c) => isMentionRelevant(c.content, productName)),
+  }));
 
-  return filtered.slice(0, postLimit);
+  return withFilteredComments.slice(0, postLimit);
 }
 
 // ============================================================================

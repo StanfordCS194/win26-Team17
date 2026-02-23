@@ -1,10 +1,7 @@
 import { action, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { RedditClient, RedditComment, RedditPost, searchSoftwareProduct } from "./services/reddit";
-import { HNStoryWithComments, createHackerNewsClient, searchSoftwareProductHN } from "./services/hackernews";
-import { SOQuestionWithAnswers, createStackOverflowClient, searchSoftwareProductSO } from "./services/stackoverflow";
-import { DevToArticleWithComments, createDevToClient, searchSoftwareProductDevTo } from "./services/devto";
+import { RedditClient, RedditComment, RedditPost, searchSoftwareProduct, isMentionRelevant } from "./services/reddit";
 import { createGeminiClient } from "./services/gemini";
 
 // ============================================================================
@@ -57,20 +54,14 @@ interface MentionWithSentiment {
 }
 
 function processRedditData(
-  posts: Array<{ post: RedditPost; comments: RedditComment[] }>
+  posts: Array<{ post: RedditPost; comments: RedditComment[] }>,
+  productName: string
 ): MentionWithSentiment[] {
   const mentions: MentionWithSentiment[] = [];
 
   for (const { post, comments } of posts) {
-    // Include post if it has meaningful content OR a substantial title
-    const postText = post.content && post.content.length > 50
-      ? post.content
-      : post.title && post.title.length > 20
-        ? `${post.title}. ${post.content || ""}`
-        : null;
-
-    if (postText) {
-      const sentiment = analyzeSentiment(postText);
+    if (post.content && post.content.length > 50 && isMentionRelevant(post.content, productName)) {
+      const sentiment = analyzeSentiment(post.content);
       mentions.push({
         text: postText.slice(0, 500),
         author: post.author,
@@ -83,7 +74,7 @@ function processRedditData(
     }
 
     for (const comment of comments) {
-      if (comment.content && comment.content.length > 30) {
+      if (comment.content && comment.content.length > 30 && isMentionRelevant(comment.content, productName)) {
         const sentiment = analyzeSentiment(comment.content);
         mentions.push({
           text: comment.content.slice(0, 500),
@@ -400,97 +391,22 @@ export const generateReport = action({
         status: "fetching",
       });
 
-      // Fetch data from multiple sources in parallel
-      const [redditResult, hnResult, soResult, devtoResult] = await Promise.allSettled([
-        (async () => {
-          const reddit = new RedditClient({ cacheTtlMs: 60000 });
-          const results = await searchSoftwareProduct(reddit, productName, {
-            postLimit: 10,
-            commentsPerPost: 20,
-          });
-          return processRedditData(results);
-        })(),
-        (async () => {
-          const hn = createHackerNewsClient({ cacheTtlMs: 60000 });
-          const results = await searchSoftwareProductHN(hn, productName, {
-            storyLimit: 10,
-            commentsPerStory: 20,
-          });
-          return processHackerNewsData(results);
-        })(),
-        (async () => {
-          const so = createStackOverflowClient({ cacheTtlMs: 60000 });
-          const results = await searchSoftwareProductSO(so, productName, {
-            questionLimit: 10,
-            answersPerQuestion: 20,
-          });
-          return processStackOverflowData(results);
-        })(),
-        (async () => {
-          const devto = createDevToClient({ cacheTtlMs: 60000 });
-          const results = await searchSoftwareProductDevTo(devto, productName, {
-            articleLimit: 10,
-          });
-          return processDevToData(results);
-        })(),
-      ]);
-
-      // Collect successes, gracefully skip failures
-      const mentions: MentionWithSentiment[] = [];
-      let sourcesAnalyzed = 0;
-      const sourceNames: string[] = [];
-
-      if (redditResult.status === "fulfilled") {
-        mentions.push(...redditResult.value);
-        if (redditResult.value.length > 0) {
-          sourcesAnalyzed++;
-          sourceNames.push("Reddit");
-        }
-      } else {
-        console.warn("Reddit fetch failed:", redditResult.reason);
-      }
-
-      if (hnResult.status === "fulfilled") {
-        mentions.push(...hnResult.value);
-        if (hnResult.value.length > 0) {
-          sourcesAnalyzed++;
-          sourceNames.push("HackerNews");
-        }
-      } else {
-        console.warn("HackerNews fetch failed:", hnResult.reason);
-      }
-
-      if (soResult.status === "fulfilled") {
-        mentions.push(...soResult.value);
-        if (soResult.value.length > 0) {
-          sourcesAnalyzed++;
-          sourceNames.push("StackOverflow");
-        }
-      } else {
-        console.warn("StackOverflow fetch failed:", soResult.reason);
-      }
-
-      if (devtoResult.status === "fulfilled") {
-        mentions.push(...devtoResult.value);
-        if (devtoResult.value.length > 0) {
-          sourcesAnalyzed++;
-          sourceNames.push("Dev.to");
-        }
-      } else {
-        console.warn("Dev.to fetch failed:", devtoResult.reason);
-      }
-
-      // Deduplicate before analysis
-      const dedupedMentions = deduplicateMentions(mentions);
-      if (dedupedMentions.length < mentions.length) {
-        console.log(`Deduplication: ${mentions.length} -> ${dedupedMentions.length} mentions`);
-      }
+      // Fetch Reddit data with software-focused search
+      const reddit = new RedditClient({ cacheTtlMs: 60000 });
+      const results = await searchSoftwareProduct(reddit, productName, {
+        postLimit: 25,
+        commentsPerPost: 25,
+      });
 
       // Update status: analyzing
       await ctx.runMutation(internal.pipeline.updateReportStatus, {
         reportId,
         status: "analyzing",
       });
+
+      // Process mentions (per-mention relevance filtering applied inside)
+      const mentions = processRedditData(results, productName);
+      console.log(`Found ${mentions.length} relevant mentions for "${productName}" from ${results.length} posts`);
 
       // Try Gemini analysis, fall back to basic if unavailable
       let summary: string;
