@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
-import { useQuery, useAction } from "convex/react";
+import { useQuery, useAction, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
+import { getSessionId, getUserId } from "@/lib/session";
+import { addSessionSearch, getSessionSearches } from "@/lib/sessionSearchHistory";
 import Header from "@/components/Header";
 import SearchHero from "@/components/SearchHero";
 import LoadingState from "@/components/LoadingState";
@@ -18,8 +20,10 @@ const Index = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
+  const [sessionSearches, setSessionSearches] = useState<string[]>(getSessionSearches);
 
   const analyzeProduct = useAction(api.reports.analyzeProduct);
+  const recordEvent = useMutation(api.analytics.recordEvent);
 
   // Check for product in URL on mount
   useEffect(() => {
@@ -32,6 +36,14 @@ const Index = () => {
       setSearchQuery(productParam);
       setView("loading");
       setIsAnalyzing(true);
+
+      recordEvent({
+        eventType: "search_submitted",
+        sessionId: getSessionId(),
+        userId: getUserId(),
+        productName: productParam,
+        timestamp: Date.now(),
+      }).catch(() => {});
 
       analyzeProduct({ productName: productParam })
         .then((result) => {
@@ -46,7 +58,7 @@ const Index = () => {
     }
 
     setInitialLoadDone(true);
-  }, [initialLoadDone, analyzeProduct]);
+  }, [initialLoadDone, analyzeProduct, recordEvent]);
 
   // Query for the report by product name
   const report = useQuery(
@@ -81,9 +93,18 @@ const Index = () => {
 
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
+    setSessionSearches(addSessionSearch(query));
     setError(null);
     setView("loading");
     setIsAnalyzing(true);
+
+    recordEvent({
+      eventType: "search_submitted",
+      sessionId: getSessionId(),
+      userId: getUserId(),
+      productName: query,
+      timestamp: Date.now(),
+    }).catch(() => {});
 
     try {
       const result = await analyzeProduct({ productName: query });
@@ -171,7 +192,7 @@ const Index = () => {
       <Header />
 
       {view === "search" && (
-        <SearchHero onSearch={handleSearch} isLoading={isAnalyzing} />
+        <SearchHero onSearch={handleSearch} isLoading={isAnalyzing} sessionSearches={sessionSearches} />
       )}
 
       {view === "loading" && (
@@ -184,6 +205,7 @@ const Index = () => {
       {view === "dashboard" && report && report.status === "complete" && (
         <Dashboard
           report={toProductReport(report)}
+          reportId={report._id}
           onBack={handleBack}
           onRefresh={handleRefresh}
           isRefreshing={isAnalyzing}

@@ -7,7 +7,7 @@ interface LoadingStateProps {
 
 const steps = [
   { id: "pending", icon: Search, label: "Starting analysis..." },
-  { id: "fetching", icon: FileText, label: "Fetching Reddit discussions..." },
+  { id: "fetching", icon: FileText, label: "Fetching from Reddit, HackerNews, Stack Overflow, Dev.to..." },
   { id: "classifying", icon: Tags, label: "Classifying mentions..." },
   { id: "analyzing", icon: BarChart3, label: "Computing scores..." },
   { id: "complete", icon: CheckCircle2, label: "Generating report..." },
@@ -18,7 +18,7 @@ const LoadingState = ({ productName, status = "pending" }: LoadingStateProps) =>
   const progress = Math.max(10, ((currentStepIndex + 1) / steps.length) * 100);
 
   return (
-    <div className="min-h-[70vh] flex flex-col items-center justify-center px-4">
+    <div className="min-h-[70vh] flex flex-col items-center justify-center px-4 pt-20">
       <div className="text-center max-w-md mx-auto">
         {/* Pulsing Logo */}
         <div className="relative mb-8">
@@ -33,7 +33,7 @@ const LoadingState = ({ productName, status = "pending" }: LoadingStateProps) =>
           Analyzing {productName}
         </h2>
         <p className="text-muted-foreground mb-8">
-          Gathering feedback from Reddit...
+          Gathering feedback across multiple sources...
         </p>
 
         {/* Steps */}

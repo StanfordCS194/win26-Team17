@@ -1,4 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useMutation } from "convex/react";
+import { api } from "../../convex/_generated/api";
+import { Id } from "../../convex/_generated/dataModel";
+import { getSessionId, getUserId } from "@/lib/session";
 import { ProductReport } from "@/types/report";
 import ScoreGauge from "./ScoreGauge";
 import InsightCard from "./InsightCard";
@@ -10,17 +14,41 @@ import { Button } from "@/components/ui/button";
 
 interface DashboardProps {
   report: ProductReport;
+  reportId: Id<"productReports">;
   onBack: () => void;
   onRefresh?: () => void;
   isRefreshing?: boolean;
 }
 
-const Dashboard = ({ report, onBack, onRefresh, isRefreshing }: DashboardProps) => {
+const Dashboard = ({ report, reportId, onBack, onRefresh, isRefreshing }: DashboardProps) => {
   const [copied, setCopied] = useState(false);
+  const [defensibilitySubmitted, setDefensibilitySubmitted] = useState(false);
+  const recordEvent = useMutation(api.analytics.recordEvent);
+  const recordDefensibilityRating = useMutation(api.analytics.recordDefensibilityRating);
+
+  useEffect(() => {
+    recordEvent({
+      eventType: "dashboard_viewed",
+      sessionId: getSessionId(),
+      userId: getUserId(),
+      reportId,
+      timestamp: Date.now(),
+    }).catch(() => {});
+  }, [recordEvent, reportId]);
 
   // Check if report is older than 24 hours
   const reportAge = Date.now() - new Date(report.generatedAt).getTime();
   const isStale = reportAge > 24 * 60 * 60 * 1000;
+
+  const handleDefensibilityRating = (score: number) => {
+    recordDefensibilityRating({
+      reportId,
+      sessionId: getSessionId(),
+      score,
+      timestamp: Date.now(),
+    }).catch(() => {});
+    setDefensibilitySubmitted(true);
+  };
 
   const handleShare = async () => {
     const url = `${window.location.origin}?product=${encodeURIComponent(report.productName)}`;
@@ -176,6 +204,7 @@ const Dashboard = ({ report, onBack, onRefresh, isRefreshing }: DashboardProps) 
                   insight={strength}
                   type="strength"
                   index={index}
+                  reportId={reportId}
                 />
               ))}
             </div>
@@ -194,17 +223,40 @@ const Dashboard = ({ report, onBack, onRefresh, isRefreshing }: DashboardProps) 
                   insight={issue}
                   type="issue"
                   index={index}
+                  reportId={reportId}
                 />
               ))}
             </div>
           </section>
         </div>
 
+        {/* Defensibility prompt */}
+        {!defensibilitySubmitted && (
+          <div className="mt-10 p-6 bg-card rounded-xl border border-border">
+            <p className="text-sm font-medium text-foreground mb-3">
+              I could share this with my team or leadership
+            </p>
+            <div className="flex gap-2">
+              {[1, 2, 3, 4, 5].map((score) => (
+                <Button
+                  key={score}
+                  variant="outline"
+                  size="sm"
+                  className="w-10 h-10 p-0"
+                  onClick={() => handleDefensibilityRating(score)}
+                >
+                  {score}
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Footer */}
         <div className="mt-12 pt-8 border-t border-border text-center">
           <p className="text-sm text-muted-foreground">
             This report was generated using AI-powered analysis of public feedback from
-            Reddit and G2. All insights are backed by direct user quotes.
+            Reddit, HackerNews, Stack Overflow, Dev.to, and G2. All insights are backed by direct user quotes.
           </p>
         </div>
       </div>

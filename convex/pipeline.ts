@@ -7,16 +7,31 @@ import {
   RedditPost,
   searchSoftwareProduct,
 } from "./services/reddit";
+import {
+  HackerNewsClient,
+  searchSoftwareProductHN,
+  type HNStoryWithComments,
+} from "./services/hackernews";
+import {
+  StackOverflowClient,
+  searchSoftwareProductSO,
+  type SOQuestionWithAnswers,
+} from "./services/stackoverflow";
+import {
+  DevToClient,
+  searchSoftwareProductDevTo,
+  type DevToArticleWithComments,
+} from "./services/devto";
 import { deduplicateMentions } from "./services/dedup";
 import { classifyMentions, synthesizeReport } from "./services/classifier";
 import type { RawMention } from "./services/classifier";
 import { computeAllScores, ASPECTS } from "./services/scoring";
 
 // ============================================================================
-// Helper: Extract Raw Mentions from Reddit Data
+// Helpers: Extract Raw Mentions from Each Source
 // ============================================================================
 
-function extractMentions(
+function extractRedditMentions(
   posts: Array<{ post: RedditPost; comments: RedditComment[] }>
 ): RawMention[] {
   const mentions: RawMention[] = [];
@@ -40,6 +55,106 @@ function extractMentions(
           date: comment.createdAt,
           url: comment.permalink,
           source: "reddit",
+        });
+      }
+    }
+  }
+
+  return mentions;
+}
+
+function extractHackerNewsMentions(
+  stories: HNStoryWithComments[]
+): RawMention[] {
+  const mentions: RawMention[] = [];
+
+  for (const { story, comments } of stories) {
+    const storyText = story.storyText || story.title;
+    if (storyText && storyText.length > 30) {
+      const hnUrl = `https://news.ycombinator.com/item?id=${story.id}`;
+      mentions.push({
+        text: storyText.slice(0, 500),
+        author: story.author,
+        date: story.createdAt,
+        url: story.url || hnUrl,
+        source: "hackernews",
+      });
+    }
+
+    for (const comment of comments) {
+      if (comment.text && comment.text.length > 30) {
+        mentions.push({
+          text: comment.text.slice(0, 500),
+          author: comment.author,
+          date: comment.createdAt,
+          url: `https://news.ycombinator.com/item?id=${comment.id}`,
+          source: "hackernews",
+        });
+      }
+    }
+  }
+
+  return mentions;
+}
+
+function extractStackOverflowMentions(
+  questions: SOQuestionWithAnswers[]
+): RawMention[] {
+  const mentions: RawMention[] = [];
+
+  for (const { question, answers } of questions) {
+    const questionText = question.body || question.title;
+    if (questionText && questionText.length > 30) {
+      mentions.push({
+        text: questionText.slice(0, 500),
+        author: question.author,
+        date: question.createdAt,
+        url: question.url,
+        source: "stackoverflow",
+      });
+    }
+
+    for (const answer of answers) {
+      if (answer.body && answer.body.length > 30) {
+        mentions.push({
+          text: answer.body.slice(0, 500),
+          author: answer.author,
+          date: answer.createdAt,
+          url: `https://stackoverflow.com/a/${answer.id}`,
+          source: "stackoverflow",
+        });
+      }
+    }
+  }
+
+  return mentions;
+}
+
+function extractDevToMentions(
+  articles: DevToArticleWithComments[]
+): RawMention[] {
+  const mentions: RawMention[] = [];
+
+  for (const { article, comments } of articles) {
+    const articleText = article.body || `${article.title}. ${article.description}`;
+    if (articleText && articleText.length > 30) {
+      mentions.push({
+        text: articleText.slice(0, 500),
+        author: article.author,
+        date: article.publishedAt,
+        url: article.url,
+        source: "devto",
+      });
+    }
+
+    for (const comment of comments) {
+      if (comment.body && comment.body.length > 30) {
+        mentions.push({
+          text: comment.body.slice(0, 500),
+          author: comment.author,
+          date: comment.createdAt,
+          url: article.url,
+          source: "devto",
         });
       }
     }
@@ -88,7 +203,7 @@ export const saveReportResults = internalMutation({
         quotes: v.array(
           v.object({
             text: v.string(),
-            source: v.union(v.literal("reddit"), v.literal("g2")),
+            source: v.union(v.literal("reddit"), v.literal("hackernews"), v.literal("stackoverflow"), v.literal("devto"), v.literal("g2")),
             author: v.string(),
             date: v.string(),
             url: v.string(),
@@ -104,7 +219,7 @@ export const saveReportResults = internalMutation({
         quotes: v.array(
           v.object({
             text: v.string(),
-            source: v.union(v.literal("reddit"), v.literal("g2")),
+            source: v.union(v.literal("reddit"), v.literal("hackernews"), v.literal("stackoverflow"), v.literal("devto"), v.literal("g2")),
             author: v.string(),
             date: v.string(),
             url: v.string(),
@@ -172,33 +287,86 @@ export const generateReport = action({
 
     try {
       // ----------------------------------------------------------------
-      // STAGE 1: COLLECT -- Fetch Reddit posts and comments
+      // STAGE 1: COLLECT -- Fetch data from all sources
       // ----------------------------------------------------------------
       const stage1Start = Date.now();
-      console.log(`${tag} [1/6 COLLECT] Fetching Reddit data...`);
+      console.log(`${tag} [1/6 COLLECT] Fetching data from all sources...`);
 
       await ctx.runMutation(internal.pipeline.updateReportStatus, {
         reportId,
         status: "fetching",
       });
 
-      const reddit = new RedditClient({
-        cacheTtlMs: 60000,
-        requestDelayMs: 3000,
-        retryDelayMs: 30000,
-        maxRetries: 3,
-      });
-      const results = await searchSoftwareProduct(reddit, productName, {
-        postLimit: 10,
-        commentsPerPost: 20,
-      });
+      const rawMentions: RawMention[] = [];
+      let sourcesAnalyzed = 0;
 
-      const rawMentions = extractMentions(results);
-      const totalPosts = results.length;
-      const totalComments = results.reduce((sum, r) => sum + r.comments.length, 0);
+      // Reddit
+      try {
+        const reddit = new RedditClient({
+          cacheTtlMs: 60000,
+          requestDelayMs: 3000,
+          retryDelayMs: 30000,
+          maxRetries: 3,
+        });
+        const redditResults = await searchSoftwareProduct(reddit, productName, {
+          postLimit: 25,
+          commentsPerPost: 25,
+        });
+        const redditMentions = extractRedditMentions(redditResults);
+        rawMentions.push(...redditMentions);
+        sourcesAnalyzed++;
+        console.log(`${tag} Reddit: ${redditResults.length} posts, ${redditMentions.length} mentions`);
+      } catch (error) {
+        console.warn(`${tag} Reddit fetch failed:`, error);
+      }
+
+      // HackerNews
+      try {
+        const hn = new HackerNewsClient();
+        const hnResults = await searchSoftwareProductHN(hn, productName, {
+          storyLimit: 10,
+          commentsPerStory: 20,
+        });
+        const hnMentions = extractHackerNewsMentions(hnResults);
+        rawMentions.push(...hnMentions);
+        sourcesAnalyzed++;
+        console.log(`${tag} HackerNews: ${hnResults.length} stories, ${hnMentions.length} mentions`);
+      } catch (error) {
+        console.warn(`${tag} HackerNews fetch failed:`, error);
+      }
+
+      // Stack Overflow
+      try {
+        const so = new StackOverflowClient();
+        const soResults = await searchSoftwareProductSO(so, productName, {
+          questionLimit: 10,
+          answersPerQuestion: 10,
+        });
+        const soMentions = extractStackOverflowMentions(soResults);
+        rawMentions.push(...soMentions);
+        sourcesAnalyzed++;
+        console.log(`${tag} StackOverflow: ${soResults.length} questions, ${soMentions.length} mentions`);
+      } catch (error) {
+        console.warn(`${tag} StackOverflow fetch failed:`, error);
+      }
+
+      // Dev.to
+      try {
+        const devto = new DevToClient();
+        const devtoResults = await searchSoftwareProductDevTo(devto, productName, {
+          articleLimit: 10,
+        });
+        const devtoMentions = extractDevToMentions(devtoResults);
+        rawMentions.push(...devtoMentions);
+        sourcesAnalyzed++;
+        console.log(`${tag} Dev.to: ${devtoResults.length} articles, ${devtoMentions.length} mentions`);
+      } catch (error) {
+        console.warn(`${tag} Dev.to fetch failed:`, error);
+      }
+
       console.log(
         `${tag} [1/6 COLLECT] Done in ${elapsed(stage1Start)} -- ` +
-          `${totalPosts} posts, ${totalComments} comments, ${rawMentions.length} raw mentions`
+          `${rawMentions.length} raw mentions from ${sourcesAnalyzed} sources`
       );
 
       // Handle empty results early
@@ -208,7 +376,7 @@ export const generateReport = action({
           reportId,
           overallScore: 50,
           totalMentions: 0,
-          sourcesAnalyzed: 1,
+          sourcesAnalyzed: Math.max(sourcesAnalyzed, 1),
           summary: `No user feedback found for "${productName}".`,
           strengths: [],
           issues: [],
@@ -323,7 +491,7 @@ export const generateReport = action({
         reportId,
         overallScore: scores.overallScore,
         totalMentions: relevantMentions.length,
-        sourcesAnalyzed: 1,
+        sourcesAnalyzed: Math.max(sourcesAnalyzed, 1),
         summary: report.summary,
         strengths: report.strengths,
         issues: report.issues,

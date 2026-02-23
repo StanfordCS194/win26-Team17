@@ -8,12 +8,18 @@
  * @module
  */
 
+import type * as analytics from "../analytics.js";
 import type * as pipeline from "../pipeline.js";
 import type * as reports from "../reports.js";
 import type * as services_classifier from "../services/classifier.js";
+import type * as services_contentFilter from "../services/contentFilter.js";
 import type * as services_dedup from "../services/dedup.js";
+import type * as services_devto from "../services/devto.js";
+import type * as services_g2 from "../services/g2.js";
+import type * as services_hackernews from "../services/hackernews.js";
 import type * as services_reddit from "../services/reddit.js";
 import type * as services_scoring from "../services/scoring.js";
+import type * as services_stackoverflow from "../services/stackoverflow.js";
 import type * as testReddit from "../testReddit.js";
 
 import type {
@@ -23,12 +29,18 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  analytics: typeof analytics;
   pipeline: typeof pipeline;
   reports: typeof reports;
   "services/classifier": typeof services_classifier;
+  "services/contentFilter": typeof services_contentFilter;
   "services/dedup": typeof services_dedup;
+  "services/devto": typeof services_devto;
+  "services/g2": typeof services_g2;
+  "services/hackernews": typeof services_hackernews;
   "services/reddit": typeof services_reddit;
   "services/scoring": typeof services_scoring;
+  "services/stackoverflow": typeof services_stackoverflow;
   testReddit: typeof testReddit;
 }>;
 
