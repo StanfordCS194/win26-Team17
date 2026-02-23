@@ -3,6 +3,7 @@ import { useQuery, useAction, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
 import { getSessionId, getUserId } from "@/lib/session";
+import { addSessionSearch } from "@/lib/sessionSearchHistory";
 import Header from "@/components/Header";
 import SearchHero from "@/components/SearchHero";
 import LoadingState from "@/components/LoadingState";
@@ -92,7 +93,7 @@ const Index = () => {
 
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
-    setSessionSearches((prev) => prev.includes(query) ? prev : [...prev, query]);
+    setSessionSearches(addSessionSearch(query));
     setError(null);
     setView("loading");
     setIsAnalyzing(true);
