@@ -27,6 +27,8 @@ const toProductReport = (r: {
   strengths?: ProductReport["strengths"];
   issues?: ProductReport["issues"];
   aspects?: ProductReport["aspects"];
+  issueRadar?: ProductReport["issueRadar"];
+  confidence?: ProductReport["confidence"];
 }): ProductReport => ({
   productName: r.productName,
   overallScore: r.overallScore ?? 50,
@@ -38,6 +40,8 @@ const toProductReport = (r: {
   strengths: r.strengths ?? [],
   issues: r.issues ?? [],
   aspects: r.aspects ?? [],
+  issueRadar: r.issueRadar ?? [],
+  confidence: r.confidence ?? { overall: 0, coverage: 0, agreement: 0, sourceDiversity: 0 },
 });
 
 const Compare = () => {

@@ -17,12 +17,14 @@ import { ASPECTS } from "./scoring";
 // Types
 // ============================================================================
 
+export type SourceName = "reddit" | "hackernews" | "stackoverflow" | "devto";
+
 export interface RawMention {
   text: string;
   author: string;
   date: string;
   url: string;
-  source: "reddit";
+  source: SourceName;
 }
 
 // ============================================================================
@@ -200,7 +202,7 @@ interface ReportInsight {
   frequency: number;
   quotes: Array<{
     text: string;
-    source: "reddit";
+    source: SourceName;
     author: string;
     date: string;
     url: string;
@@ -268,7 +270,7 @@ Identify 2-4 strengths (positive themes) and 2-4 issues (negative themes). Refer
       .slice(0, 5)
       .map((idx) => ({
         text: mentions[idx].text,
-        source: "reddit" as const,
+        source: mentions[idx].source,
         author: mentions[idx].author,
         date: mentions[idx].date,
         url: mentions[idx].url,

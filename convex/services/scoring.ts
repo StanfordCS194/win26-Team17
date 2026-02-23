@@ -24,7 +24,7 @@ export interface ClassifiedMention {
   author: string;
   date: string;
   url: string;
-  source: "reddit";
+  source: "reddit" | "hackernews" | "stackoverflow" | "devto";
   classification: MentionClassification;
 }
 
