@@ -6,6 +6,7 @@ import { ConvexProvider, ConvexReactClient } from "convex/react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Index from "./pages/Index";
+import KPIDashboard from "./pages/KPIDashboard";
 import NotFound from "./pages/NotFound";
 
 const Compare = lazy(() => import("./pages/Compare"));
@@ -20,12 +21,13 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><span className="text-muted-foreground">Loading...</span></div>}>
-          <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/compare" element={<Compare />} />
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+            <Routes>
+              <Route path="/" element={<Index />} />
+              <Route path="/compare" element={<Compare />} />
+              <Route path="/kpis" element={<KPIDashboard />} />
+              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
           </Suspense>
         </BrowserRouter>
       </TooltipProvider>
