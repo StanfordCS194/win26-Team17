@@ -60,10 +60,17 @@ function processRedditData(
   const mentions: MentionWithSentiment[] = [];
 
   for (const { post, comments } of posts) {
-    if (post.content && post.content.length > 50) {
-      const sentiment = analyzeSentiment(post.content);
+    // Include post if it has meaningful content OR a substantial title
+    const postText = post.content && post.content.length > 50
+      ? post.content
+      : post.title && post.title.length > 20
+        ? `${post.title}. ${post.content || ""}`
+        : null;
+
+    if (postText) {
+      const sentiment = analyzeSentiment(postText);
       mentions.push({
-        text: post.content.slice(0, 500),
+        text: postText.slice(0, 500),
         author: post.author,
         date: post.createdAt,
         url: post.permalink,

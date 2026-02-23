@@ -210,15 +210,16 @@ export class HackerNewsClient implements IHackerNewsClient {
     };
   }
 
-  async searchStories(query: string, options: { limit?: number } = {}): Promise<HNSearchResult> {
-    const { limit = 20 } = options;
+  async searchStories(query: string, options: { limit?: number; sort?: "relevance" | "date" } = {}): Promise<HNSearchResult> {
+    const { limit = 20, sort = "relevance" } = options;
 
-    const cacheKey = `hn:stories:${query}:${limit}`;
+    const cacheKey = `hn:stories:${query}:${limit}:${sort}`;
     const cached = this.getCached<HNSearchResult>(cacheKey);
     if (cached) return cached;
 
     const encodedQuery = encodeURIComponent(query);
-    const url = `${HN_API_BASE}/search?query=${encodedQuery}&tags=story&hitsPerPage=${limit}`;
+    const endpoint = sort === "date" ? "search_by_date" : "search";
+    const url = `${HN_API_BASE}/${endpoint}?query=${encodedQuery}&tags=story&hitsPerPage=${limit}`;
 
     const data = await this.fetchWithRetry(url);
     const stories = data.hits.map((hit) => this.parseStory(hit));
@@ -253,16 +254,32 @@ export class HackerNewsClient implements IHackerNewsClient {
     const { storyLimit = 10, commentsPerStory = 20 } = options;
 
     const searchResult = await this.searchStories(query, { limit: storyLimit });
+
+    // Fetch comments in parallel batches of 3
+    const batchSize = 3;
     const results: HNStoryWithComments[] = [];
 
-    for (const story of searchResult.stories) {
-      try {
-        const comments = await this.fetchComments(story.id, { limit: commentsPerStory });
-        results.push({ story, comments });
+    for (let i = 0; i < searchResult.stories.length; i += batchSize) {
+      const batch = searchResult.stories.slice(i, i + batchSize);
+      const batchResults = await Promise.allSettled(
+        batch.map(story =>
+          this.fetchComments(story.id, { limit: commentsPerStory })
+            .then(comments => ({ story, comments }))
+        )
+      );
+
+      for (let j = 0; j < batchResults.length; j++) {
+        const result = batchResults[j];
+        if (result.status === "fulfilled") {
+          results.push(result.value);
+        } else {
+          console.warn(`Failed to fetch HN comments for story ${batch[j].id}:`, result.reason);
+          results.push({ story: batch[j], comments: [] });
+        }
+      }
+
+      if (i + batchSize < searchResult.stories.length) {
         await this.sleep(this.requestDelayMs);
-      } catch (error) {
-        console.warn(`Failed to fetch HN comments for story ${story.id}:`, error);
-        results.push({ story, comments: [] });
       }
     }
 
@@ -283,6 +300,8 @@ function generateHNSoftwareQueries(productName: string): string[] {
     `${productName}`,
     `${productName} review`,
     `${productName} alternative`,
+    `${productName} vs`,
+    `${productName} pricing`,
   ];
 }
 
@@ -300,26 +319,63 @@ export async function searchSoftwareProductHN(
   const allResults: HNStoryWithComments[] = [];
   const seenStoryIds = new Set<number>();
 
+  const addResults = (results: HNStoryWithComments[]) => {
+    for (const result of results) {
+      if (!seenStoryIds.has(result.story.id)) {
+        seenStoryIds.add(result.story.id);
+        allResults.push(result);
+      }
+    }
+  };
+
+  // Mix relevance-sorted and recent results for balanced coverage
   const queries = generateHNSoftwareQueries(productName);
 
-  for (const query of queries) {
-    try {
-      const results = await client.searchWithComments(query, {
-        storyLimit: 5,
-        commentsPerStory,
-      });
+  // First: top relevance hit for the product name
+  try {
+    const relevanceResults = await client.searchWithComments(productName, {
+      storyLimit: 5,
+      commentsPerStory,
+    });
+    addResults(relevanceResults);
+  } catch (error) {
+    console.warn(`Failed HN relevance search for "${productName}":`, error);
+  }
 
-      for (const result of results) {
-        if (!seenStoryIds.has(result.story.id)) {
-          seenStoryIds.add(result.story.id);
-          allResults.push(result);
+  // Second: recent results (search_by_date) for freshness
+  if (allResults.length < storyLimit) {
+    try {
+      const recentStories = await (client as HackerNewsClient).searchStories(productName, {
+        limit: 5,
+        sort: "date",
+      });
+      // Fetch comments for recent stories
+      for (const story of recentStories.stories) {
+        if (seenStoryIds.has(story.id) || allResults.length >= storyLimit) continue;
+        try {
+          const comments = await client.fetchComments(story.id, { limit: commentsPerStory });
+          addResults([{ story, comments }]);
+        } catch {
+          addResults([{ story, comments: [] }]);
         }
       }
     } catch (error) {
+      console.warn(`Failed HN date search for "${productName}":`, error);
+    }
+  }
+
+  // Third: query variations for breadth
+  for (const query of queries.slice(1)) {
+    if (allResults.length >= storyLimit) break;
+    try {
+      const results = await client.searchWithComments(query, {
+        storyLimit: 3,
+        commentsPerStory,
+      });
+      addResults(results);
+    } catch (error) {
       console.warn(`Failed HN search for "${query}":`, error);
     }
-
-    if (allResults.length >= storyLimit) break;
   }
 
   // Filter to software-relevant content
