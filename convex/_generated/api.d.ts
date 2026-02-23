@@ -13,7 +13,6 @@ import type * as pipeline from "../pipeline.js";
 import type * as reports from "../reports.js";
 import type * as services_contentFilter from "../services/contentFilter.js";
 import type * as services_devto from "../services/devto.js";
-import type * as services_g2 from "../services/g2.js";
 import type * as services_gemini from "../services/gemini.js";
 import type * as services_hackernews from "../services/hackernews.js";
 import type * as services_reddit from "../services/reddit.js";
@@ -32,7 +31,6 @@ declare const fullApi: ApiFromModules<{
   reports: typeof reports;
   "services/contentFilter": typeof services_contentFilter;
   "services/devto": typeof services_devto;
-  "services/g2": typeof services_g2;
   "services/gemini": typeof services_gemini;
   "services/hackernews": typeof services_hackernews;
   "services/reddit": typeof services_reddit;

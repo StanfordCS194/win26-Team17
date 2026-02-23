@@ -21,6 +21,7 @@ const toProductReport = (r: {
   overallScore?: number;
   totalMentions?: number;
   sourcesAnalyzed?: number;
+  sourceBreakdown?: ProductReport["sourceBreakdown"];
   generatedAt: string;
   summary?: string;
   strengths?: ProductReport["strengths"];
@@ -31,6 +32,7 @@ const toProductReport = (r: {
   overallScore: r.overallScore ?? 50,
   totalMentions: r.totalMentions ?? 0,
   sourcesAnalyzed: r.sourcesAnalyzed ?? 1,
+  sourceBreakdown: r.sourceBreakdown ?? [],
   generatedAt: r.generatedAt,
   summary: r.summary ?? "",
   strengths: r.strengths ?? [],

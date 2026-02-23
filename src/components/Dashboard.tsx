@@ -167,6 +167,30 @@ const Dashboard = ({ report, reportId, onBack, onRefresh, isRefreshing }: Dashbo
           </div>
         </div>
 
+        {/* Source Breakdown */}
+        {report.sourceBreakdown.length > 0 && (
+          <section className="mb-10 animate-fade-up">
+            <h2 className="text-xl font-bold text-foreground mb-4">
+              Sources Analyzed
+            </h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {report.sourceBreakdown.map((source) => (
+                <div
+                  key={source.name}
+                  className="bg-card rounded-xl border border-border p-4 text-center"
+                >
+                  <div className="text-2xl font-bold text-foreground">
+                    {source.mentions}
+                  </div>
+                  <div className="text-sm text-muted-foreground mt-1">
+                    {source.label}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         {/* Aspect Scores */}
         <section className="mb-10">
           <h2 className="text-xl font-bold text-foreground mb-4">
@@ -246,7 +270,7 @@ const Dashboard = ({ report, reportId, onBack, onRefresh, isRefreshing }: Dashbo
         <div className="mt-12 pt-8 border-t border-border text-center">
           <p className="text-sm text-muted-foreground">
             This report was generated using AI-powered analysis of public feedback from
-            Reddit, HackerNews, Stack Overflow, Dev.to, and G2. All insights are backed by direct user quotes.
+            Reddit, HackerNews, Stack Overflow, and Dev.to. All insights are backed by direct user quotes.
           </p>
         </div>
       </div>

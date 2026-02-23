@@ -465,11 +465,11 @@ describe("Pipeline Dev.to Data Processing Shape", () => {
 
 describe("Pipeline Source Type Contracts", () => {
   it("should accept all valid source literals", () => {
-    const validSources = ["reddit", "hackernews", "stackoverflow", "devto", "g2"] as const;
+    const validSources = ["reddit", "hackernews", "stackoverflow", "devto"] as const;
     type Source = (typeof validSources)[number];
 
     const sourceSet = new Set<Source>(validSources);
-    expect(sourceSet.size).toBe(5);
+    expect(sourceSet.size).toBe(4);
     expect(sourceSet.has("stackoverflow")).toBe(true);
     expect(sourceSet.has("devto")).toBe(true);
   });

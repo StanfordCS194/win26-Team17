@@ -7,7 +7,7 @@ import { HNStoryWithComments, searchSoftwareProductHN, HackerNewsClient } from "
 import { SOQuestionWithAnswers, searchSoftwareProductSO, StackOverflowClient } from "./services/stackoverflow";
 import { DevToArticleWithComments, searchSoftwareProductDevTo, DevToClient } from "./services/devto";
 
-type SourceName = "reddit" | "hackernews" | "stackoverflow" | "devto" | "g2";
+type SourceName = "reddit" | "hackernews" | "stackoverflow" | "devto";
 
 // ============================================================================
 // Simple Sentiment Analysis (fallback when Gemini unavailable)
@@ -55,7 +55,7 @@ interface MentionWithSentiment {
   url: string;
   score: number;
   isPositive: boolean;
-  source: "reddit" | "hackernews" | "stackoverflow" | "devto" | "g2";
+  source: "reddit" | "hackernews" | "stackoverflow" | "devto";
 }
 
 function processRedditData(
@@ -252,7 +252,7 @@ function createBasicInsights(mentions: MentionWithSentiment[], isPositive: boole
     frequency: filtered.length,
     quotes: topMentions.map((m) => ({
       text: m.text,
-      source: m.source as "reddit" | "hackernews" | "stackoverflow" | "devto" | "g2",
+      source: m.source as "reddit" | "hackernews" | "stackoverflow" | "devto",
       author: m.author,
       date: m.date,
       url: m.url,
@@ -330,7 +330,7 @@ export const saveReportResults = internalMutation({
         quotes: v.array(
           v.object({
             text: v.string(),
-            source: v.union(v.literal("reddit"), v.literal("hackernews"), v.literal("stackoverflow"), v.literal("devto"), v.literal("g2")),
+            source: v.union(v.literal("reddit"), v.literal("hackernews"), v.literal("stackoverflow"), v.literal("devto")),
             author: v.string(),
             date: v.string(),
             url: v.string(),
@@ -346,7 +346,7 @@ export const saveReportResults = internalMutation({
         quotes: v.array(
           v.object({
             text: v.string(),
-            source: v.union(v.literal("reddit"), v.literal("hackernews"), v.literal("stackoverflow"), v.literal("devto"), v.literal("g2")),
+            source: v.union(v.literal("reddit"), v.literal("hackernews"), v.literal("stackoverflow"), v.literal("devto")),
             author: v.string(),
             date: v.string(),
             url: v.string(),
@@ -362,6 +362,11 @@ export const saveReportResults = internalMutation({
         trend: v.union(v.literal("up"), v.literal("down"), v.literal("stable")),
       })
     ),
+    sourceBreakdown: v.optional(v.array(v.object({
+      name: v.string(),
+      label: v.string(),
+      mentions: v.number(),
+    }))),
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.reportId, {
@@ -373,6 +378,7 @@ export const saveReportResults = internalMutation({
       strengths: args.strengths,
       issues: args.issues,
       aspects: args.aspects,
+      sourceBreakdown: args.sourceBreakdown,
     });
   },
 });
@@ -469,16 +475,24 @@ export const generateReport = action({
       // Deduplicate
       const dedupedMentions = deduplicateMentions(allMentions);
       const sourcesAnalyzed = activeSourceNames.length;
-      const sourceNames = activeSourceNames.map((s) => {
-        const labels: Record<SourceName, string> = {
-          reddit: "Reddit",
-          hackernews: "HackerNews",
-          stackoverflow: "Stack Overflow",
-          devto: "Dev.to",
-          g2: "G2",
-        };
-        return labels[s] || s;
-      });
+      const sourceLabels: Record<SourceName, string> = {
+        reddit: "Reddit",
+        hackernews: "HackerNews",
+        stackoverflow: "Stack Overflow",
+        devto: "Dev.to",
+      };
+      const sourceNames = activeSourceNames.map((s) => sourceLabels[s] || s);
+
+      // Compute per-source mention counts
+      const sourceMentionCounts = new Map<SourceName, number>();
+      for (const m of dedupedMentions) {
+        sourceMentionCounts.set(m.source, (sourceMentionCounts.get(m.source) || 0) + 1);
+      }
+      const sourceBreakdown = activeSourceNames.map((name) => ({
+        name,
+        label: sourceLabels[name] || name,
+        mentions: sourceMentionCounts.get(name) || 0,
+      }));
 
       console.log(`Total: ${dedupedMentions.length} deduplicated mentions from ${sourcesAnalyzed} sources`);
 
@@ -559,6 +573,7 @@ export const generateReport = action({
         strengths,
         issues,
         aspects,
+        sourceBreakdown,
       });
     } catch (error) {
       console.error("Pipeline error:", error);
