@@ -1,4 +1,8 @@
 import { useState } from "react";
+import { useMutation } from "convex/react";
+import { api } from "../../convex/_generated/api";
+import { Id } from "../../convex/_generated/dataModel";
+import { getSessionId, getUserId } from "@/lib/session";
 import { Insight } from "@/types/report";
 import QuoteCard from "./QuoteCard";
 import { ChevronDown, ChevronUp, MessageSquare } from "lucide-react";
@@ -8,10 +12,12 @@ interface InsightCardProps {
   insight: Insight;
   type: "strength" | "issue";
   index: number;
+  reportId?: Id<"productReports">;
 }
 
-const InsightCard = ({ insight, type, index }: InsightCardProps) => {
+const InsightCard = ({ insight, type, index, reportId }: InsightCardProps) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const recordEvent = useMutation(api.analytics.recordEvent);
 
   const isStrength = type === "strength";
   const accentColor = isStrength ? "pulse-positive" : "pulse-negative";
@@ -62,7 +68,19 @@ const InsightCard = ({ insight, type, index }: InsightCardProps) => {
 
       {/* Expand/Collapse */}
       <button
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={() => {
+          const next = !isExpanded;
+          if (next && reportId) {
+            recordEvent({
+              eventType: "quote_engaged",
+              sessionId: getSessionId(),
+              userId: getUserId(),
+              reportId,
+              timestamp: Date.now(),
+            }).catch(() => {});
+          }
+          setIsExpanded(next);
+        }}
         className="w-full px-5 py-3 border-t border-border bg-secondary/30 flex items-center justify-between hover:bg-secondary/50 transition-colors"
       >
         <span className="text-sm font-medium text-muted-foreground">
