@@ -3,7 +3,7 @@ import { v } from "convex/values";
 
 const quoteValidator = v.object({
   text: v.string(),
-  source: v.union(v.literal("reddit"), v.literal("g2")),
+  source: v.union(v.literal("reddit"), v.literal("hackernews"), v.literal("stackoverflow"), v.literal("devto"), v.literal("g2")),
   author: v.string(),
   date: v.string(),
   url: v.string(),

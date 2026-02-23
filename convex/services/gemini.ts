@@ -11,6 +11,7 @@
 export interface GeminiConfig {
   apiKey: string;
   model?: string;
+  maxRetries?: number;
 }
 
 export interface AnalyzedInsight {
@@ -37,6 +38,23 @@ export interface AnalysisResult {
   }>;
 }
 
+export interface QualityScore {
+  overall: number;
+  mentionCoverage: number;
+  insightSpecificity: number;
+  quoteAccuracy: number;
+  reasons: string[];
+}
+
+export interface MentionInput {
+  text: string;
+  author: string;
+  date: string;
+  url: string;
+  isPositive: boolean;
+  source?: string;
+}
+
 export class GeminiApiError extends Error {
   constructor(
     message: string,
@@ -53,16 +71,29 @@ export class GeminiApiError extends Error {
 
 const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 
+const GENERIC_TITLES = new Set([
+  "user feedback",
+  "user feedback highlights",
+  "general feedback",
+  "positive feedback",
+  "negative feedback",
+  "areas for improvement",
+  "mixed reviews",
+  "overall sentiment",
+]);
+
 export class GeminiClient {
   private readonly apiKey: string;
   private readonly model: string;
+  private readonly maxRetries: number;
 
   constructor(config: GeminiConfig) {
     this.apiKey = config.apiKey;
     this.model = config.model || "gemini-2.5-flash";
+    this.maxRetries = config.maxRetries ?? 1;
   }
 
-  private async generate(prompt: string): Promise<string> {
+  private async generate(prompt: string, temperature = 0.3): Promise<string> {
     const url = `${GEMINI_API_URL}/${this.model}:generateContent?key=${this.apiKey}`;
 
     const response = await fetch(url, {
@@ -77,7 +108,7 @@ export class GeminiClient {
           },
         ],
         generationConfig: {
-          temperature: 0.3,
+          temperature,
           maxOutputTokens: 8192,
         },
       }),
@@ -99,7 +130,6 @@ export class GeminiClient {
   }
 
   private parseJsonResponse<T>(text: string): T {
-    // Extract JSON from markdown code blocks if present
     const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
     const jsonStr = jsonMatch ? jsonMatch[1].trim() : text.trim();
 
@@ -110,28 +140,129 @@ export class GeminiClient {
     }
   }
 
-  async analyzeProductFeedback(
+  // ---------------------------------------------------------------------------
+  // Output Quality Scoring
+  // ---------------------------------------------------------------------------
+
+  scoreOutputQuality(
+    parsed: {
+      summary: string;
+      overallScore: number;
+      strengths: Array<{ title: string; mentionIds: number[] }>;
+      issues: Array<{ title: string; mentionIds: number[] }>;
+      aspects: Array<{ mentionIds: number[] }>;
+    },
+    mentionCount: number
+  ): QualityScore {
+    const reasons: string[] = [];
+
+    // 1. Mention coverage: what % of input mentions are referenced?
+    const allReferencedIds = new Set<number>();
+    for (const s of parsed.strengths) {
+      for (const id of s.mentionIds || []) allReferencedIds.add(id);
+    }
+    for (const i of parsed.issues) {
+      for (const id of i.mentionIds || []) allReferencedIds.add(id);
+    }
+    for (const a of parsed.aspects) {
+      for (const id of a.mentionIds || []) allReferencedIds.add(id);
+    }
+    const validIds = [...allReferencedIds].filter(id => id >= 0 && id < mentionCount);
+    const mentionCoverage = mentionCount > 0 ? validIds.length / mentionCount : 0;
+    if (mentionCoverage < 0.3) {
+      reasons.push(`Low mention coverage: only ${validIds.length}/${mentionCount} mentions referenced`);
+    }
+
+    // 2. Insight specificity: are titles generic?
+    const allTitles = [
+      ...parsed.strengths.map(s => s.title),
+      ...parsed.issues.map(i => i.title),
+    ];
+    const genericCount = allTitles.filter(
+      t => GENERIC_TITLES.has(t.toLowerCase().trim())
+    ).length;
+    const insightSpecificity = allTitles.length > 0
+      ? 1 - (genericCount / allTitles.length)
+      : 0;
+    if (genericCount > 0) {
+      reasons.push(`${genericCount} generic insight title(s) detected`);
+    }
+
+    // 3. Quote accuracy: are all mentionIds in bounds?
+    const outOfBounds = [...allReferencedIds].filter(id => id < 0 || id >= mentionCount);
+    const quoteAccuracy = allReferencedIds.size > 0
+      ? 1 - (outOfBounds.length / allReferencedIds.size)
+      : 1;
+    if (outOfBounds.length > 0) {
+      reasons.push(`${outOfBounds.length} out-of-bounds mentionId(s)`);
+    }
+
+    // 4. Structural checks
+    if ((parsed.strengths?.length || 0) < 1) {
+      reasons.push("No strengths identified");
+    }
+    if ((parsed.issues?.length || 0) < 1) {
+      reasons.push("No issues identified");
+    }
+    if (!parsed.summary || parsed.summary.length < 20) {
+      reasons.push("Summary too short or missing");
+    }
+    if (parsed.overallScore < 0 || parsed.overallScore > 100) {
+      reasons.push(`Score out of range: ${parsed.overallScore}`);
+    }
+
+    const structuralScore =
+      ((parsed.strengths?.length || 0) >= 2 ? 0.25 : 0) +
+      ((parsed.issues?.length || 0) >= 2 ? 0.25 : 0) +
+      (parsed.summary && parsed.summary.length >= 20 ? 0.25 : 0) +
+      (parsed.overallScore >= 0 && parsed.overallScore <= 100 ? 0.25 : 0);
+
+    const overall = (
+      mentionCoverage * 0.3 +
+      insightSpecificity * 0.3 +
+      quoteAccuracy * 0.2 +
+      structuralScore * 0.2
+    );
+
+    return { overall, mentionCoverage, insightSpecificity, quoteAccuracy, reasons };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Prompt Building
+  // ---------------------------------------------------------------------------
+
+  private buildPrompt(
     productName: string,
-    mentions: Array<{
-      text: string;
-      author: string;
-      date: string;
-      url: string;
-      isPositive: boolean;
-    }>
-  ): Promise<AnalysisResult> {
-    if (mentions.length === 0) {
-      return {
-        summary: `No user feedback found for "${productName}".`,
-        overallScore: 50,
-        strengths: [],
-        issues: [],
-        aspects: [
-          { name: "Features", score: 50, mentions: 0 },
-          { name: "Ease of Use", score: 50, mentions: 0 },
-          { name: "Performance", score: 50, mentions: 0 },
-        ],
-      };
+    limitedMentions: Array<{ id: number; text: string; author: string; sentiment: string; source: string }>,
+    totalMentions: number,
+    sourceBreakdown: Record<string, number>,
+    isRetry: boolean,
+    qualityIssues?: string[]
+  ): string {
+    const sourceDescriptions: Record<string, string> = {
+      reddit: "Reddit (broad user base, casual to professional)",
+      hackernews: "HackerNews (technical audience, developers and founders)",
+      stackoverflow: "Stack Overflow (Q&A, developer-focused technical discussions)",
+      devto: "Dev.to (developer blog posts and community articles)",
+      g2: "G2 (business software reviewers)",
+    };
+
+    const sourceLines = Object.entries(sourceBreakdown)
+      .map(([src, count]) => `- ${sourceDescriptions[src] || src}: ${count} mentions`)
+      .join("\n");
+
+    let retryInstructions = "";
+    if (isRetry && qualityIssues?.length) {
+      retryInstructions = `
+IMPORTANT: A previous analysis attempt had quality issues:
+${qualityIssues.map(r => `- ${r}`).join("\n")}
+
+Fix these issues in this attempt:
+- Use SPECIFIC, descriptive titles (not "User Feedback" or "General Issues")
+- Reference more mentionIds to improve coverage
+- Only use mentionIds between 0 and ${limitedMentions.length - 1}
+- Ensure at least 2 strengths and 2 issues are identified
+`;
     }
 
     // Prepare mentions for the prompt (limit to avoid token limits)
@@ -151,7 +282,7 @@ Completely IGNORE mentions that:
 - Do not contain any actionable feedback about "${productName}"
 - Are generic comments, memes, or jokes with no product insight
 
-Here are ${limitedMentions.length} user mentions (out of ${mentions.length} total):
+Here are ${limitedMentions.length} user mentions (out of ${totalMentions} total):
 
 ${JSON.stringify(limitedMentions, null, 2)}
 
@@ -188,18 +319,85 @@ Rules:
 - Be accurate to what users actually said
 - If very few mentions are truly relevant, say so in the summary and adjust the score accordingly
 - Return ONLY valid JSON, no other text`;
+  }
 
-    const responseText = await this.generate(prompt);
-    const parsed = this.parseJsonResponse<{
+  // ---------------------------------------------------------------------------
+  // Main Analysis (with retry on low quality)
+  // ---------------------------------------------------------------------------
+
+  async analyzeProductFeedback(
+    productName: string,
+    mentions: MentionInput[]
+  ): Promise<AnalysisResult> {
+    if (mentions.length === 0) {
+      return {
+        summary: `No user feedback found for "${productName}".`,
+        overallScore: 50,
+        strengths: [],
+        issues: [],
+        aspects: [
+          { name: "Features", score: 50, mentions: 0 },
+          { name: "Ease of Use", score: 50, mentions: 0 },
+          { name: "Performance", score: 50, mentions: 0 },
+        ],
+      };
+    }
+
+    const limitedMentions = mentions.slice(0, 30).map((m, i) => ({
+      id: i,
+      text: m.text.slice(0, 300),
+      author: m.author,
+      sentiment: m.isPositive ? "positive" : "negative",
+      source: m.source || "reddit",
+    }));
+
+    const sourceBreakdown: Record<string, number> = {};
+    for (const m of limitedMentions) {
+      sourceBreakdown[m.source] = (sourceBreakdown[m.source] || 0) + 1;
+    }
+
+    type ParsedResponse = {
       summary: string;
       overallScore: number;
       strengths: Array<{ title: string; description: string; mentionIds: number[] }>;
       issues: Array<{ title: string; description: string; mentionIds: number[] }>;
       aspects: Array<{ name: string; score: number; mentionIds: number[] }>;
-    }>(responseText);
+    };
 
-    // Map mentionIds back to actual quotes
-    const mentionMap = new Map(limitedMentions.map((m) => [m.id, m]));
+    let bestParsed: ParsedResponse | null = null;
+    let bestQuality: QualityScore | null = null;
+
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      const isRetry = attempt > 0;
+      const prompt = this.buildPrompt(
+        productName,
+        limitedMentions,
+        mentions.length,
+        sourceBreakdown,
+        isRetry,
+        bestQuality?.reasons
+      );
+
+      const temperature = isRetry ? 0.5 : 0.3;
+      const responseText = await this.generate(prompt, temperature);
+      const parsed = this.parseJsonResponse<ParsedResponse>(responseText);
+
+      const quality = this.scoreOutputQuality(parsed, limitedMentions.length);
+      console.log(`Gemini analysis attempt ${attempt + 1}: quality=${quality.overall.toFixed(2)} [coverage=${quality.mentionCoverage.toFixed(2)}, specificity=${quality.insightSpecificity.toFixed(2)}, accuracy=${quality.quoteAccuracy.toFixed(2)}]`);
+
+      if (!bestParsed || quality.overall > (bestQuality?.overall ?? 0)) {
+        bestParsed = parsed;
+        bestQuality = quality;
+      }
+
+      if (quality.overall >= 0.6) break;
+
+      if (attempt < this.maxRetries) {
+        console.log(`Quality below threshold (${quality.overall.toFixed(2)} < 0.6), reprompting... Issues: ${quality.reasons.join("; ")}`);
+      }
+    }
+
+    const parsed = bestParsed!;
 
     const mapInsight = (insight: { title: string; description: string; mentionIds: number[] }): AnalyzedInsight => ({
       title: insight.title,
@@ -207,7 +405,7 @@ Rules:
       frequency: insight.mentionIds?.length || 0,
       quotes: (insight.mentionIds || [])
         .slice(0, 5)
-        .filter((id) => id < mentions.length)
+        .filter((id) => id >= 0 && id < mentions.length)
         .map((id) => ({
           text: mentions[id]?.text || "",
           author: mentions[id]?.author || "Unknown",

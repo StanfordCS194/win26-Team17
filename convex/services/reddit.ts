@@ -4,6 +4,8 @@
  * Uses Reddit's public RSS feeds (no auth required) to fetch posts and comments.
  */
 
+import { isLikelySoftwareContent } from "./contentFilter";
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -311,16 +313,32 @@ export class RedditClient implements IRedditClient {
     const { postLimit = 10, commentsPerPost = 30, subreddit } = options;
 
     const searchResult = await this.searchPosts(query, { subreddit, limit: postLimit });
+
+    // Fetch comments in parallel batches of 3 to balance speed vs rate limiting
+    const batchSize = 3;
     const results: RedditPostWithComments[] = [];
 
-    for (const post of searchResult.posts) {
-      try {
-        const comments = await this.fetchComments(post.permalink, { limit: commentsPerPost });
-        results.push({ post, comments });
+    for (let i = 0; i < searchResult.posts.length; i += batchSize) {
+      const batch = searchResult.posts.slice(i, i + batchSize);
+      const batchResults = await Promise.allSettled(
+        batch.map(post =>
+          this.fetchComments(post.permalink, { limit: commentsPerPost })
+            .then(comments => ({ post, comments }))
+        )
+      );
+
+      for (let j = 0; j < batchResults.length; j++) {
+        const result = batchResults[j];
+        if (result.status === "fulfilled") {
+          results.push(result.value);
+        } else {
+          console.warn(`Failed to fetch comments for post ${batch[j].id}:`, result.reason);
+          results.push({ post: batch[j], comments: [] });
+        }
+      }
+
+      if (i + batchSize < searchResult.posts.length) {
         await this.sleep(this.requestDelayMs);
-      } catch (error) {
-        console.warn(`Failed to fetch comments for post ${post.id}:`, error);
-        results.push({ post, comments: [] });
       }
     }
 

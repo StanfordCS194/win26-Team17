@@ -50,7 +50,7 @@ interface MentionWithSentiment {
   url: string;
   score: number;
   isPositive: boolean;
-  source: "reddit";
+  source: "reddit" | "hackernews" | "stackoverflow" | "devto" | "g2";
 }
 
 function processRedditData(
@@ -63,7 +63,7 @@ function processRedditData(
     if (post.content && post.content.length > 50 && isMentionRelevant(post.content, productName)) {
       const sentiment = analyzeSentiment(post.content);
       mentions.push({
-        text: post.content.slice(0, 500),
+        text: postText.slice(0, 500),
         author: post.author,
         date: post.createdAt,
         url: post.permalink,
@@ -92,6 +92,135 @@ function processRedditData(
   return mentions;
 }
 
+function processHackerNewsData(
+  stories: HNStoryWithComments[]
+): MentionWithSentiment[] {
+  const mentions: MentionWithSentiment[] = [];
+
+  for (const { story, comments } of stories) {
+    const storyText = story.storyText || story.title;
+    if (storyText && storyText.length > 30) {
+      const sentiment = analyzeSentiment(storyText);
+      const hnUrl = `https://news.ycombinator.com/item?id=${story.id}`;
+      mentions.push({
+        text: storyText.slice(0, 500),
+        author: story.author,
+        date: story.createdAt,
+        url: story.url || hnUrl,
+        score: sentiment.score,
+        isPositive: sentiment.isPositive,
+        source: "hackernews",
+      });
+    }
+
+    for (const comment of comments) {
+      if (comment.text && comment.text.length > 30) {
+        const sentiment = analyzeSentiment(comment.text);
+        mentions.push({
+          text: comment.text.slice(0, 500),
+          author: comment.author,
+          date: comment.createdAt,
+          url: `https://news.ycombinator.com/item?id=${comment.id}`,
+          score: sentiment.score,
+          isPositive: sentiment.isPositive,
+          source: "hackernews",
+        });
+      }
+    }
+  }
+
+  return mentions;
+}
+
+function processStackOverflowData(
+  questions: SOQuestionWithAnswers[]
+): MentionWithSentiment[] {
+  const mentions: MentionWithSentiment[] = [];
+
+  for (const { question, answers } of questions) {
+    const questionText = question.body || question.title;
+    if (questionText && questionText.length > 30) {
+      const sentiment = analyzeSentiment(questionText);
+      mentions.push({
+        text: questionText.slice(0, 500),
+        author: question.author,
+        date: question.createdAt,
+        url: question.url,
+        score: sentiment.score,
+        isPositive: sentiment.isPositive,
+        source: "stackoverflow",
+      });
+    }
+
+    for (const answer of answers) {
+      if (answer.body && answer.body.length > 30) {
+        const sentiment = analyzeSentiment(answer.body);
+        mentions.push({
+          text: answer.body.slice(0, 500),
+          author: answer.author,
+          date: answer.createdAt,
+          url: `https://stackoverflow.com/a/${answer.id}`,
+          score: sentiment.score,
+          isPositive: sentiment.isPositive,
+          source: "stackoverflow",
+        });
+      }
+    }
+  }
+
+  return mentions;
+}
+
+function processDevToData(
+  articles: DevToArticleWithComments[]
+): MentionWithSentiment[] {
+  const mentions: MentionWithSentiment[] = [];
+
+  for (const { article, comments } of articles) {
+    const articleText = article.body || `${article.title}. ${article.description}`;
+    if (articleText && articleText.length > 30) {
+      const sentiment = analyzeSentiment(articleText);
+      mentions.push({
+        text: articleText.slice(0, 500),
+        author: article.author,
+        date: article.publishedAt,
+        url: article.url,
+        score: sentiment.score,
+        isPositive: sentiment.isPositive,
+        source: "devto",
+      });
+    }
+
+    for (const comment of comments) {
+      if (comment.body && comment.body.length > 30) {
+        const sentiment = analyzeSentiment(comment.body);
+        mentions.push({
+          text: comment.body.slice(0, 500),
+          author: comment.author,
+          date: comment.createdAt,
+          url: article.url,
+          score: sentiment.score,
+          isPositive: sentiment.isPositive,
+          source: "devto",
+        });
+      }
+    }
+  }
+
+  return mentions;
+}
+
+// Deduplicate near-identical mentions (same text within first 100 chars)
+function deduplicateMentions(mentions: MentionWithSentiment[]): MentionWithSentiment[] {
+  const seen = new Set<string>();
+  return mentions.filter((m) => {
+    const key = m.text.slice(0, 100).toLowerCase().trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 // Fallback analysis without Gemini
 function createBasicInsights(mentions: MentionWithSentiment[], isPositive: boolean) {
   const filtered = mentions.filter((m) => m.isPositive === isPositive);
@@ -118,7 +247,7 @@ function createBasicInsights(mentions: MentionWithSentiment[], isPositive: boole
     frequency: filtered.length,
     quotes: topMentions.map((m) => ({
       text: m.text,
-      source: m.source as "reddit" | "g2",
+      source: m.source as "reddit" | "hackernews" | "stackoverflow" | "devto" | "g2",
       author: m.author,
       date: m.date,
       url: m.url,
@@ -196,7 +325,7 @@ export const saveReportResults = internalMutation({
         quotes: v.array(
           v.object({
             text: v.string(),
-            source: v.union(v.literal("reddit"), v.literal("g2")),
+            source: v.union(v.literal("reddit"), v.literal("hackernews"), v.literal("stackoverflow"), v.literal("devto"), v.literal("g2")),
             author: v.string(),
             date: v.string(),
             url: v.string(),
@@ -212,7 +341,7 @@ export const saveReportResults = internalMutation({
         quotes: v.array(
           v.object({
             text: v.string(),
-            source: v.union(v.literal("reddit"), v.literal("g2")),
+            source: v.union(v.literal("reddit"), v.literal("hackernews"), v.literal("stackoverflow"), v.literal("devto"), v.literal("g2")),
             author: v.string(),
             date: v.string(),
             url: v.string(),
@@ -286,28 +415,34 @@ export const generateReport = action({
         title: string;
         description: string;
         frequency: number;
-        quotes: Array<{ text: string; source: "reddit" | "g2"; author: string; date: string; url: string }>;
+        quotes: Array<{ text: string; source: "reddit" | "hackernews" | "stackoverflow" | "devto" | "g2"; author: string; date: string; url: string }>;
       }>;
       let issues: typeof strengths;
       let aspects: Array<{ name: string; score: number; mentions: number; trend: "up" | "down" | "stable" }>;
 
       const geminiApiKey = process.env.GEMINI_API_KEY;
 
-      if (geminiApiKey && mentions.length > 0) {
+      if (geminiApiKey && dedupedMentions.length > 0) {
         try {
           console.log("Using Gemini for analysis...");
           const gemini = createGeminiClient(geminiApiKey);
-          const analysis = await gemini.analyzeProductFeedback(productName, mentions);
+          const analysis = await gemini.analyzeProductFeedback(productName, dedupedMentions);
 
           summary = analysis.summary;
           overallScore = analysis.overallScore;
+          const mentionUrlToSource = new Map(
+            dedupedMentions.map((m) => [m.url, m.source])
+          );
+          const lookupSource = (url: string) =>
+            mentionUrlToSource.get(url) || "reddit" as const;
+
           strengths = analysis.strengths.map((s) => ({
             ...s,
-            quotes: s.quotes.map((q) => ({ ...q, source: "reddit" as const })),
+            quotes: s.quotes.map((q) => ({ ...q, source: lookupSource(q.url) })),
           }));
           issues = analysis.issues.map((i) => ({
             ...i,
-            quotes: i.quotes.map((q) => ({ ...q, source: "reddit" as const })),
+            quotes: i.quotes.map((q) => ({ ...q, source: lookupSource(q.url) })),
           }));
           aspects = analysis.aspects.map((a) => ({ ...a, trend: "stable" as const }));
 
@@ -315,33 +450,33 @@ export const generateReport = action({
         } catch (error) {
           console.warn("Gemini analysis failed, using fallback:", error);
           // Fall back to basic analysis
-          summary = `Analysis of ${mentions.length} mentions from Reddit.`;
-          overallScore = calculateBasicScore(mentions);
-          strengths = createBasicInsights(mentions, true);
-          issues = createBasicInsights(mentions, false);
-          aspects = createBasicAspects(mentions);
+          summary = `Analysis of ${dedupedMentions.length} mentions from ${sourceNames.join(" and ") || "online sources"}.`;
+          overallScore = calculateBasicScore(dedupedMentions);
+          strengths = createBasicInsights(dedupedMentions, true);
+          issues = createBasicInsights(dedupedMentions, false);
+          aspects = createBasicAspects(dedupedMentions);
         }
       } else {
         // No Gemini key or no mentions - use basic analysis
         console.log("Using basic analysis (no Gemini key or no mentions)");
-        const positiveMentions = mentions.filter((m) => m.isPositive).length;
-        const negativeMentions = mentions.length - positiveMentions;
+        const positiveMentions = dedupedMentions.filter((m) => m.isPositive).length;
+        const negativeMentions = dedupedMentions.length - positiveMentions;
 
-        summary = mentions.length > 0
-          ? `Analysis of ${mentions.length} mentions from Reddit. Found ${positiveMentions} positive and ${negativeMentions} negative mentions.`
+        summary = dedupedMentions.length > 0
+          ? `Analysis of ${dedupedMentions.length} mentions from ${sourceNames.join(" and ") || "online sources"}. Found ${positiveMentions} positive and ${negativeMentions} negative mentions.`
           : `Limited data found for "${productName}".`;
-        overallScore = calculateBasicScore(mentions);
-        strengths = createBasicInsights(mentions, true);
-        issues = createBasicInsights(mentions, false);
-        aspects = createBasicAspects(mentions);
+        overallScore = calculateBasicScore(dedupedMentions);
+        strengths = createBasicInsights(dedupedMentions, true);
+        issues = createBasicInsights(dedupedMentions, false);
+        aspects = createBasicAspects(dedupedMentions);
       }
 
       // Save results
       await ctx.runMutation(internal.pipeline.saveReportResults, {
         reportId,
         overallScore,
-        totalMentions: mentions.length,
-        sourcesAnalyzed: 1,
+        totalMentions: dedupedMentions.length,
+        sourcesAnalyzed: Math.max(sourcesAnalyzed, 1),
         summary,
         strengths,
         issues,
