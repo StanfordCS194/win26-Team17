@@ -1,24 +1,21 @@
 import { useState, useRef, useEffect } from "react";
-import { useQuery } from "convex/react";
-import { api } from "../../convex/_generated/api";
 import { Search, Sparkles, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import RecentReports from "./RecentReports";
 
 interface SearchHeroProps {
   onSearch: (query: string) => void;
   isLoading: boolean;
+  sessionSearches: string[];
 }
 
 const MIN_LENGTH = 2;
 const MAX_LENGTH = 100;
 
-const SearchHero = ({ onSearch, isLoading }: SearchHeroProps) => {
+const SearchHero = ({ onSearch, isLoading, sessionSearches }: SearchHeroProps) => {
   const [query, setQuery] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const suggestedProducts = useQuery(api.reports.listProductNames) ?? [];
 
   // Auto-focus search input on mount
   useEffect(() => {
@@ -130,14 +127,14 @@ const SearchHero = ({ onSearch, isLoading }: SearchHeroProps) => {
           </Button>
         </form>
 
-        {/* Suggested Products */}
-        {suggestedProducts.length > 0 && (
+        {/* Session Recent Searches */}
+        {sessionSearches.length > 0 && (
           <div className="animate-fade-up animation-delay-400">
             <p className="text-sm text-muted-foreground mb-3">
-              Try it with a popular product:
+              Recent searches:
             </p>
             <div className="flex flex-wrap justify-center gap-2">
-              {suggestedProducts.slice(0, 3).map((product) => (
+              {sessionSearches.slice().reverse().slice(0, 5).map((product) => (
                 <button
                   key={product}
                   onClick={() => handleSuggestionClick(product)}
@@ -151,10 +148,6 @@ const SearchHero = ({ onSearch, isLoading }: SearchHeroProps) => {
           </div>
         )}
       </div>
-
-
-      {/* Recent Reports */}
-      <RecentReports onSelect={handleSuggestionClick} isLoading={isLoading} />
     </div>
   );
 };
