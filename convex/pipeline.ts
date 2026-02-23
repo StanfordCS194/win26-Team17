@@ -1,7 +1,7 @@
 import { action, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { RedditClient, RedditComment, RedditPost, searchSoftwareProduct } from "./services/reddit";
+import { RedditClient, RedditComment, RedditPost, searchSoftwareProduct, isMentionRelevant } from "./services/reddit";
 import { createGeminiClient } from "./services/gemini";
 
 // ============================================================================
@@ -54,12 +54,13 @@ interface MentionWithSentiment {
 }
 
 function processRedditData(
-  posts: Array<{ post: RedditPost; comments: RedditComment[] }>
+  posts: Array<{ post: RedditPost; comments: RedditComment[] }>,
+  productName: string
 ): MentionWithSentiment[] {
   const mentions: MentionWithSentiment[] = [];
 
   for (const { post, comments } of posts) {
-    if (post.content && post.content.length > 50) {
+    if (post.content && post.content.length > 50 && isMentionRelevant(post.content, productName)) {
       const sentiment = analyzeSentiment(post.content);
       mentions.push({
         text: post.content.slice(0, 500),
@@ -73,7 +74,7 @@ function processRedditData(
     }
 
     for (const comment of comments) {
-      if (comment.content && comment.content.length > 30) {
+      if (comment.content && comment.content.length > 30 && isMentionRelevant(comment.content, productName)) {
         const sentiment = analyzeSentiment(comment.content);
         mentions.push({
           text: comment.content.slice(0, 500),
@@ -264,8 +265,8 @@ export const generateReport = action({
       // Fetch Reddit data with software-focused search
       const reddit = new RedditClient({ cacheTtlMs: 60000 });
       const results = await searchSoftwareProduct(reddit, productName, {
-        postLimit: 10,
-        commentsPerPost: 20,
+        postLimit: 25,
+        commentsPerPost: 25,
       });
 
       // Update status: analyzing
@@ -274,8 +275,9 @@ export const generateReport = action({
         status: "analyzing",
       });
 
-      // Process mentions
-      const mentions = processRedditData(results);
+      // Process mentions (per-mention relevance filtering applied inside)
+      const mentions = processRedditData(results, productName);
+      console.log(`Found ${mentions.length} relevant mentions for "${productName}" from ${results.length} posts`);
 
       // Try Gemini analysis, fall back to basic if unavailable
       let summary: string;
