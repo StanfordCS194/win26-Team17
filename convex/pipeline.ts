@@ -132,6 +132,17 @@ function processHackerNewsData(
   return mentions;
 }
 
+// Deduplicate near-identical mentions (same text within first 100 chars)
+function deduplicateMentions(mentions: MentionWithSentiment[]): MentionWithSentiment[] {
+  const seen = new Set<string>();
+  return mentions.filter((m) => {
+    const key = m.text.slice(0, 100).toLowerCase().trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 // Fallback analysis without Gemini
 function createBasicInsights(mentions: MentionWithSentiment[], isPositive: boolean) {
   const filtered = mentions.filter((m) => m.isPositive === isPositive);
@@ -347,6 +358,12 @@ export const generateReport = action({
         console.warn("HackerNews fetch failed:", hnResult.reason);
       }
 
+      // Deduplicate before analysis
+      const dedupedMentions = deduplicateMentions(mentions);
+      if (dedupedMentions.length < mentions.length) {
+        console.log(`Deduplication: ${mentions.length} -> ${dedupedMentions.length} mentions`);
+      }
+
       // Update status: analyzing
       await ctx.runMutation(internal.pipeline.updateReportStatus, {
         reportId,
@@ -367,16 +384,16 @@ export const generateReport = action({
 
       const geminiApiKey = process.env.GEMINI_API_KEY;
 
-      if (geminiApiKey && mentions.length > 0) {
+      if (geminiApiKey && dedupedMentions.length > 0) {
         try {
           console.log("Using Gemini for analysis...");
           const gemini = createGeminiClient(geminiApiKey);
-          const analysis = await gemini.analyzeProductFeedback(productName, mentions);
+          const analysis = await gemini.analyzeProductFeedback(productName, dedupedMentions);
 
           summary = analysis.summary;
           overallScore = analysis.overallScore;
           const mentionUrlToSource = new Map(
-            mentions.map((m) => [m.url, m.source])
+            dedupedMentions.map((m) => [m.url, m.source])
           );
           const lookupSource = (url: string) =>
             mentionUrlToSource.get(url) || "reddit" as const;
@@ -395,32 +412,32 @@ export const generateReport = action({
         } catch (error) {
           console.warn("Gemini analysis failed, using fallback:", error);
           // Fall back to basic analysis
-          summary = `Analysis of ${mentions.length} mentions from ${sourceNames.join(" and ") || "online sources"}.`;
-          overallScore = calculateBasicScore(mentions);
-          strengths = createBasicInsights(mentions, true);
-          issues = createBasicInsights(mentions, false);
-          aspects = createBasicAspects(mentions);
+          summary = `Analysis of ${dedupedMentions.length} mentions from ${sourceNames.join(" and ") || "online sources"}.`;
+          overallScore = calculateBasicScore(dedupedMentions);
+          strengths = createBasicInsights(dedupedMentions, true);
+          issues = createBasicInsights(dedupedMentions, false);
+          aspects = createBasicAspects(dedupedMentions);
         }
       } else {
         // No Gemini key or no mentions - use basic analysis
         console.log("Using basic analysis (no Gemini key or no mentions)");
-        const positiveMentions = mentions.filter((m) => m.isPositive).length;
-        const negativeMentions = mentions.length - positiveMentions;
+        const positiveMentions = dedupedMentions.filter((m) => m.isPositive).length;
+        const negativeMentions = dedupedMentions.length - positiveMentions;
 
-        summary = mentions.length > 0
-          ? `Analysis of ${mentions.length} mentions from ${sourceNames.join(" and ") || "online sources"}. Found ${positiveMentions} positive and ${negativeMentions} negative mentions.`
+        summary = dedupedMentions.length > 0
+          ? `Analysis of ${dedupedMentions.length} mentions from ${sourceNames.join(" and ") || "online sources"}. Found ${positiveMentions} positive and ${negativeMentions} negative mentions.`
           : `Limited data found for "${productName}".`;
-        overallScore = calculateBasicScore(mentions);
-        strengths = createBasicInsights(mentions, true);
-        issues = createBasicInsights(mentions, false);
-        aspects = createBasicAspects(mentions);
+        overallScore = calculateBasicScore(dedupedMentions);
+        strengths = createBasicInsights(dedupedMentions, true);
+        issues = createBasicInsights(dedupedMentions, false);
+        aspects = createBasicAspects(dedupedMentions);
       }
 
       // Save results
       await ctx.runMutation(internal.pipeline.saveReportResults, {
         reportId,
         overallScore,
-        totalMentions: mentions.length,
+        totalMentions: dedupedMentions.length,
         sourcesAnalyzed: Math.max(sourcesAnalyzed, 1),
         summary,
         strengths,
