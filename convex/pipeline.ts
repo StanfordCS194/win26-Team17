@@ -496,6 +496,16 @@ export const generateReport = action({
 
       console.log(`Total: ${dedupedMentions.length} deduplicated mentions from ${sourcesAnalyzed} sources`);
 
+      // Fail early if no data was found
+      if (dedupedMentions.length === 0) {
+        await ctx.runMutation(internal.pipeline.updateReportStatus, {
+          reportId,
+          status: "error",
+          errorMessage: `No public discussions found for "${productName}". Try a more specific software product name (e.g. "Notion", "Figma", "Linear").`,
+        });
+        return;
+      }
+
       // Update status: analyzing
       await ctx.runMutation(internal.pipeline.updateReportStatus, {
         reportId,
