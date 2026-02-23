@@ -110,7 +110,7 @@ export class GeminiClient {
         ],
         generationConfig: {
           temperature,
-          maxOutputTokens: 8192,
+          maxOutputTokens: 16384,
         },
       }),
     });
@@ -131,8 +131,25 @@ export class GeminiClient {
   }
 
   private parseJsonResponse<T>(text: string): T {
+    // Try matching both opening and closing fences first
     const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-    const jsonStr = jsonMatch ? jsonMatch[1].trim() : text.trim();
+    let jsonStr: string;
+
+    if (jsonMatch) {
+      jsonStr = jsonMatch[1].trim();
+    } else {
+      // Strip leading fence when closing one is missing (truncated response)
+      jsonStr = text.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
+    }
+
+    // If still not valid JSON, extract from first { to last }
+    if (!jsonStr.startsWith("{") && !jsonStr.startsWith("[")) {
+      const braceStart = jsonStr.indexOf("{");
+      const braceEnd = jsonStr.lastIndexOf("}");
+      if (braceStart !== -1 && braceEnd > braceStart) {
+        jsonStr = jsonStr.slice(braceStart, braceEnd + 1);
+      }
+    }
 
     try {
       return JSON.parse(jsonStr);
@@ -314,7 +331,8 @@ Rules:
 - Each strength/issue should have specific, descriptive titles (not generic like "User Feedback")
 - Be accurate to what users actually said
 - If very few mentions are truly relevant, say so in the summary and adjust the score accordingly
-- Return ONLY valid JSON, no other text`;
+- Keep the summary to 2-3 sentences max; be concise
+- Return ONLY raw JSON. Do NOT wrap in \`\`\`json code blocks or any other markdown`;
   }
 
   // ---------------------------------------------------------------------------
