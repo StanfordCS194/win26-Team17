@@ -139,15 +139,19 @@ const Index = () => {
   const handleRefresh = async () => {
     if (!searchQuery) return;
 
+    const query = searchQuery;
     setError(null);
+    setSearchQuery(""); // Clear query so useQuery skips and the stale report doesn't snap us back to dashboard
     setView("loading");
     setIsAnalyzing(true);
 
     try {
-      const result = await analyzeProduct({ productName: searchQuery, forceRefresh: true });
+      const result = await analyzeProduct({ productName: query, forceRefresh: true });
       setReportId(result.reportId);
+      setSearchQuery(query); // Re-subscribe to the new report
     } catch (err) {
       console.error("Failed to refresh analysis:", err);
+      setSearchQuery(query);
       setError("Failed to refresh analysis. Please try again.");
       setView("error");
       setIsAnalyzing(false);
