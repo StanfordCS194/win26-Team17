@@ -52,7 +52,7 @@ describe("searchSoftwareProduct (Reddit)", () => {
     await searchSoftwareProduct(mockClient, "Notion", { postLimit: 5 });
 
     // First call should be to product-specific subreddit
-    expect(searchCalls[0]).toBe("notion");
+    expect(searchCalls[0]).toBe("Notion");
     // Subsequent calls should be to software subreddits
     expect(searchCalls.length).toBeGreaterThan(1);
   });
@@ -119,8 +119,7 @@ describe("searchSoftwareProduct (Reddit)", () => {
     expect(results.length).toBeGreaterThan(0);
   });
 
-  it("should fall back to unfiltered when too few pass content filter", async () => {
-    // Return posts that might not pass isLikelySoftwareContent
+  it("should filter out posts that do not mention the product", async () => {
     const mockClient: IRedditClient = {
       searchPosts: vi.fn(),
       fetchComments: vi.fn(),
@@ -143,8 +142,8 @@ describe("searchSoftwareProduct (Reddit)", () => {
     const { searchSoftwareProduct } = await import("../../convex/services/reddit");
     const results = await searchSoftwareProduct(mockClient, "Notion", { postLimit: 5 });
 
-    // Even if nothing matches, should still return results (unfiltered fallback)
-    expect(results.length).toBeGreaterThan(0);
+    // Posts that don't mention the product should be filtered out
+    expect(results.length).toBe(0);
   });
 });
 

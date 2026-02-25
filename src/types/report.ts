@@ -26,6 +26,20 @@ export interface SourceInfo {
   mentions: number;
 }
 
+export interface IssueRadarItem {
+  aspect: string;
+  score: number;
+  mentionCount: number;
+  sentimentScore: number;
+}
+
+export interface ConfidenceIndicator {
+  overall: number;
+  coverage: number;
+  agreement: number;
+  sourceDiversity: number;
+}
+
 export interface ProductReport {
   productName: string;
   overallScore: number;
@@ -37,4 +51,6 @@ export interface ProductReport {
   strengths: Insight[];
   issues: Insight[];
   aspects: AspectScore[];
+  issueRadar: IssueRadarItem[];
+  confidence: ConfidenceIndicator;
 }

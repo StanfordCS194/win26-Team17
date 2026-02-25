@@ -1,93 +1,59 @@
 import { action, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { RedditClient, RedditComment, RedditPost, searchSoftwareProduct, isMentionRelevant } from "./services/reddit";
-import { createGeminiClient } from "./services/gemini";
-import { HNStoryWithComments, searchSoftwareProductHN, HackerNewsClient } from "./services/hackernews";
-import { SOQuestionWithAnswers, searchSoftwareProductSO, StackOverflowClient } from "./services/stackoverflow";
-import { DevToArticleWithComments, searchSoftwareProductDevTo, DevToClient } from "./services/devto";
-
-type SourceName = "reddit" | "hackernews" | "stackoverflow" | "devto";
-
-// ============================================================================
-// Simple Sentiment Analysis (fallback when Gemini unavailable)
-// ============================================================================
-
-const POSITIVE_WORDS = [
-  "love", "great", "awesome", "amazing", "excellent", "fantastic", "perfect",
-  "best", "helpful", "easy", "intuitive", "powerful", "recommend", "smooth",
-  "fast", "reliable", "beautiful", "clean", "simple", "efficient", "impressed"
-];
-
-const NEGATIVE_WORDS = [
-  "hate", "terrible", "awful", "horrible", "worst", "bad", "frustrating",
-  "slow", "buggy", "broken", "annoying", "confusing", "expensive", "poor",
-  "disappointing", "difficult", "complicated", "crash", "laggy", "unusable"
-];
-
-function analyzeSentiment(text: string): { score: number; isPositive: boolean } {
-  const lower = text.toLowerCase();
-  let positiveCount = 0;
-  let negativeCount = 0;
-
-  for (const word of POSITIVE_WORDS) {
-    if (lower.includes(word)) positiveCount++;
-  }
-  for (const word of NEGATIVE_WORDS) {
-    if (lower.includes(word)) negativeCount++;
-  }
-
-  const total = positiveCount + negativeCount;
-  if (total === 0) return { score: 50, isPositive: true };
-
-  const score = Math.round((positiveCount / total) * 100);
-  return { score, isPositive: positiveCount >= negativeCount };
-}
+import {
+  RedditClient,
+  RedditComment,
+  RedditPost,
+  searchSoftwareProduct,
+} from "./services/reddit";
+import {
+  HackerNewsClient,
+  searchSoftwareProductHN,
+  type HNStoryWithComments,
+} from "./services/hackernews";
+import {
+  StackOverflowClient,
+  searchSoftwareProductSO,
+  type SOQuestionWithAnswers,
+} from "./services/stackoverflow";
+import {
+  DevToClient,
+  searchSoftwareProductDevTo,
+  type DevToArticleWithComments,
+} from "./services/devto";
+import { deduplicateMentions } from "./services/dedup";
+import { classifyMentions, synthesizeReport } from "./services/classifier";
+import type { RawMention, SourceName } from "./services/classifier";
+import { computeAllScores, ASPECTS } from "./services/scoring";
 
 // ============================================================================
-// Helper Functions
+// Helpers: Extract Raw Mentions from Each Source
 // ============================================================================
 
-interface MentionWithSentiment {
-  text: string;
-  author: string;
-  date: string;
-  url: string;
-  score: number;
-  isPositive: boolean;
-  source: "reddit" | "hackernews" | "stackoverflow" | "devto";
-}
-
-function processRedditData(
-  posts: Array<{ post: RedditPost; comments: RedditComment[] }>,
-  productName: string
-): MentionWithSentiment[] {
-  const mentions: MentionWithSentiment[] = [];
+function extractRedditMentions(
+  posts: Array<{ post: RedditPost; comments: RedditComment[] }>
+): RawMention[] {
+  const mentions: RawMention[] = [];
 
   for (const { post, comments } of posts) {
-    if (post.content && post.content.length > 50 && isMentionRelevant(post.content, productName)) {
-      const sentiment = analyzeSentiment(post.content);
+    if (post.content && post.content.length > 50) {
       mentions.push({
         text: post.content.slice(0, 500),
         author: post.author,
         date: post.createdAt,
         url: post.permalink,
-        score: sentiment.score,
-        isPositive: sentiment.isPositive,
         source: "reddit",
       });
     }
 
     for (const comment of comments) {
-      if (comment.content && comment.content.length > 30 && isMentionRelevant(comment.content, productName)) {
-        const sentiment = analyzeSentiment(comment.content);
+      if (comment.content && comment.content.length > 30) {
         mentions.push({
           text: comment.content.slice(0, 500),
           author: comment.author,
           date: comment.createdAt,
           url: comment.permalink,
-          score: sentiment.score,
-          isPositive: sentiment.isPositive,
           source: "reddit",
         });
       }
@@ -97,37 +63,31 @@ function processRedditData(
   return mentions;
 }
 
-function processHackerNewsData(
+function extractHackerNewsMentions(
   stories: HNStoryWithComments[]
-): MentionWithSentiment[] {
-  const mentions: MentionWithSentiment[] = [];
+): RawMention[] {
+  const mentions: RawMention[] = [];
 
   for (const { story, comments } of stories) {
     const storyText = story.storyText || story.title;
     if (storyText && storyText.length > 30) {
-      const sentiment = analyzeSentiment(storyText);
       const hnUrl = `https://news.ycombinator.com/item?id=${story.id}`;
       mentions.push({
         text: storyText.slice(0, 500),
         author: story.author,
         date: story.createdAt,
         url: story.url || hnUrl,
-        score: sentiment.score,
-        isPositive: sentiment.isPositive,
         source: "hackernews",
       });
     }
 
     for (const comment of comments) {
       if (comment.text && comment.text.length > 30) {
-        const sentiment = analyzeSentiment(comment.text);
         mentions.push({
           text: comment.text.slice(0, 500),
           author: comment.author,
           date: comment.createdAt,
           url: `https://news.ycombinator.com/item?id=${comment.id}`,
-          score: sentiment.score,
-          isPositive: sentiment.isPositive,
           source: "hackernews",
         });
       }
@@ -137,36 +97,30 @@ function processHackerNewsData(
   return mentions;
 }
 
-function processStackOverflowData(
+function extractStackOverflowMentions(
   questions: SOQuestionWithAnswers[]
-): MentionWithSentiment[] {
-  const mentions: MentionWithSentiment[] = [];
+): RawMention[] {
+  const mentions: RawMention[] = [];
 
   for (const { question, answers } of questions) {
     const questionText = question.body || question.title;
     if (questionText && questionText.length > 30) {
-      const sentiment = analyzeSentiment(questionText);
       mentions.push({
         text: questionText.slice(0, 500),
         author: question.author,
         date: question.createdAt,
         url: question.url,
-        score: sentiment.score,
-        isPositive: sentiment.isPositive,
         source: "stackoverflow",
       });
     }
 
     for (const answer of answers) {
       if (answer.body && answer.body.length > 30) {
-        const sentiment = analyzeSentiment(answer.body);
         mentions.push({
           text: answer.body.slice(0, 500),
           author: answer.author,
           date: answer.createdAt,
           url: `https://stackoverflow.com/a/${answer.id}`,
-          score: sentiment.score,
-          isPositive: sentiment.isPositive,
           source: "stackoverflow",
         });
       }
@@ -176,36 +130,30 @@ function processStackOverflowData(
   return mentions;
 }
 
-function processDevToData(
+function extractDevToMentions(
   articles: DevToArticleWithComments[]
-): MentionWithSentiment[] {
-  const mentions: MentionWithSentiment[] = [];
+): RawMention[] {
+  const mentions: RawMention[] = [];
 
   for (const { article, comments } of articles) {
     const articleText = article.body || `${article.title}. ${article.description}`;
     if (articleText && articleText.length > 30) {
-      const sentiment = analyzeSentiment(articleText);
       mentions.push({
         text: articleText.slice(0, 500),
         author: article.author,
         date: article.publishedAt,
         url: article.url,
-        score: sentiment.score,
-        isPositive: sentiment.isPositive,
         source: "devto",
       });
     }
 
     for (const comment of comments) {
       if (comment.body && comment.body.length > 30) {
-        const sentiment = analyzeSentiment(comment.body);
         mentions.push({
           text: comment.body.slice(0, 500),
           author: comment.author,
           date: comment.createdAt,
           url: article.url,
-          score: sentiment.score,
-          isPositive: sentiment.isPositive,
           source: "devto",
         });
       }
@@ -213,82 +161,6 @@ function processDevToData(
   }
 
   return mentions;
-}
-
-// Deduplicate near-identical mentions (same text within first 100 chars)
-function deduplicateMentions(mentions: MentionWithSentiment[]): MentionWithSentiment[] {
-  const seen = new Set<string>();
-  return mentions.filter((m) => {
-    const key = m.text.slice(0, 100).toLowerCase().trim();
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-// Fallback analysis without Gemini
-function createBasicInsights(mentions: MentionWithSentiment[], isPositive: boolean) {
-  const filtered = mentions.filter((m) => m.isPositive === isPositive);
-
-  if (filtered.length === 0) {
-    return [{
-      title: isPositive ? "Limited positive feedback" : "Limited negative feedback",
-      description: isPositive
-        ? "Not enough positive mentions found to identify clear strengths."
-        : "Not enough negative mentions found to identify clear issues.",
-      frequency: 0,
-      quotes: [],
-    }];
-  }
-
-  const sorted = filtered.sort((a, b) => b.text.length - a.text.length);
-  const topMentions = sorted.slice(0, Math.min(5, sorted.length));
-
-  return [{
-    title: isPositive ? "User Feedback Highlights" : "Areas for Improvement",
-    description: isPositive
-      ? `Users shared ${filtered.length} positive mentions about this product.`
-      : `Users identified ${filtered.length} areas where improvements could be made.`,
-    frequency: filtered.length,
-    quotes: topMentions.map((m) => ({
-      text: m.text,
-      source: m.source as "reddit" | "hackernews" | "stackoverflow" | "devto",
-      author: m.author,
-      date: m.date,
-      url: m.url,
-    })),
-  }];
-}
-
-function calculateBasicScore(mentions: MentionWithSentiment[]): number {
-  if (mentions.length === 0) return 50;
-  const avgScore = mentions.reduce((sum, m) => sum + m.score, 0) / mentions.length;
-  return Math.round(avgScore);
-}
-
-function createBasicAspects(mentions: MentionWithSentiment[]) {
-  const aspects = [
-    { name: "Features", keywords: ["feature", "functionality", "tool", "option", "capability"] },
-    { name: "Ease of Use", keywords: ["easy", "intuitive", "simple", "user-friendly", "learning curve", "ux", "ui"] },
-    { name: "Performance", keywords: ["fast", "slow", "speed", "performance", "lag", "quick", "responsive"] },
-  ];
-
-  return aspects.map((aspect) => {
-    const relevant = mentions.filter((m) =>
-      aspect.keywords.some((kw) => m.text.toLowerCase().includes(kw))
-    );
-
-    const score = relevant.length > 0
-      ? Math.round(relevant.reduce((sum, m) => sum + m.score, 0) / relevant.length)
-      : 50;
-
-    return {
-      name: aspect.name,
-      score,
-      mentions: relevant.length,
-      trend: "stable" as const,
-    };
-  });
 }
 
 // ============================================================================
@@ -301,6 +173,7 @@ export const updateReportStatus = internalMutation({
     status: v.union(
       v.literal("pending"),
       v.literal("fetching"),
+      v.literal("classifying"),
       v.literal("analyzing"),
       v.literal("complete"),
       v.literal("error")
@@ -367,6 +240,20 @@ export const saveReportResults = internalMutation({
       label: v.string(),
       mentions: v.number(),
     }))),
+    issueRadar: v.array(
+      v.object({
+        aspect: v.string(),
+        score: v.number(),
+        mentionCount: v.number(),
+        sentimentScore: v.number(),
+      })
+    ),
+    confidence: v.object({
+      overall: v.number(),
+      coverage: v.number(),
+      agreement: v.number(),
+      sourceDiversity: v.number(),
+    }),
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.reportId, {
@@ -379,12 +266,14 @@ export const saveReportResults = internalMutation({
       issues: args.issues,
       aspects: args.aspects,
       sourceBreakdown: args.sourceBreakdown,
+      issueRadar: args.issueRadar,
+      confidence: args.confidence,
     });
   },
 });
 
 // ============================================================================
-// Main Pipeline Action
+// Main Pipeline Action (6-Stage Flow)
 // ============================================================================
 
 export const generateReport = action({
@@ -395,85 +284,92 @@ export const generateReport = action({
   handler: async (ctx, args): Promise<void> => {
     const { reportId, productName } = args;
 
+    const pipelineStart = Date.now();
+    const tag = `[pipeline:${productName}]`;
+
+    const elapsed = (since: number) => `${((Date.now() - since) / 1000).toFixed(1)}s`;
+
+    console.log(`${tag} Starting analysis pipeline`);
+
     try {
-      // Update status: fetching
+      // ----------------------------------------------------------------
+      // STAGE 1: COLLECT -- Fetch data from all sources
+      // ----------------------------------------------------------------
+      const stage1Start = Date.now();
+      console.log(`${tag} [1/6 COLLECT] Fetching data from all sources...`);
+
       await ctx.runMutation(internal.pipeline.updateReportStatus, {
         reportId,
         status: "fetching",
       });
 
-      // Fetch from all sources in parallel
-      const allMentions: MentionWithSentiment[] = [];
+      const rawMentions: RawMention[] = [];
       const activeSourceNames: SourceName[] = [];
 
-      const [redditResults, hnResults, soResults, devtoResults] = await Promise.allSettled([
-        (async () => {
-          const reddit = new RedditClient({ cacheTtlMs: 60000, requestDelayMs: 150 });
-          return searchSoftwareProduct(reddit, productName, {
-            postLimit: 15,
-            commentsPerPost: 10,
-          });
-        })(),
-        (async () => {
-          const hn = new HackerNewsClient({ requestDelayMs: 100 });
-          return searchSoftwareProductHN(hn, productName, {
-            storyLimit: 8,
-            commentsPerStory: 10,
-          });
-        })(),
-        (async () => {
-          const so = new StackOverflowClient({ requestDelayMs: 100 });
-          return searchSoftwareProductSO(so, productName, {
-            questionLimit: 8,
-            answersPerQuestion: 10,
-          });
-        })(),
-        (async () => {
-          const devto = new DevToClient({ requestDelayMs: 100 });
-          return searchSoftwareProductDevTo(devto, productName, {
-            articleLimit: 5,
-          });
-        })(),
-      ]);
-
-      if (redditResults.status === "fulfilled") {
-        const mentions = processRedditData(redditResults.value, productName);
-        allMentions.push(...mentions);
-        if (mentions.length > 0) activeSourceNames.push("reddit");
-        console.log(`Reddit: ${mentions.length} relevant mentions from ${redditResults.value.length} posts`);
-      } else {
-        console.warn("Reddit fetch failed:", redditResults.reason);
+      // Reddit
+      try {
+        const reddit = new RedditClient({
+          cacheTtlMs: 60000,
+          requestDelayMs: 3000,
+          retryDelayMs: 30000,
+          maxRetries: 3,
+        });
+        const redditResults = await searchSoftwareProduct(reddit, productName, {
+          postLimit: 25,
+          commentsPerPost: 25,
+        });
+        const redditMentions = extractRedditMentions(redditResults);
+        rawMentions.push(...redditMentions);
+        if (redditMentions.length > 0) activeSourceNames.push("reddit");
+        console.log(`${tag} Reddit: ${redditResults.length} posts, ${redditMentions.length} mentions`);
+      } catch (error) {
+        console.warn(`${tag} Reddit fetch failed:`, error);
       }
 
-      if (hnResults.status === "fulfilled") {
-        const mentions = processHackerNewsData(hnResults.value);
-        allMentions.push(...mentions);
-        if (mentions.length > 0) activeSourceNames.push("hackernews");
-        console.log(`HackerNews: ${mentions.length} mentions`);
-      } else {
-        console.warn("HackerNews fetch failed:", hnResults.reason);
+      // HackerNews
+      try {
+        const hn = new HackerNewsClient();
+        const hnResults = await searchSoftwareProductHN(hn, productName, {
+          storyLimit: 10,
+          commentsPerStory: 20,
+        });
+        const hnMentions = extractHackerNewsMentions(hnResults);
+        rawMentions.push(...hnMentions);
+        if (hnMentions.length > 0) activeSourceNames.push("hackernews");
+        console.log(`${tag} HackerNews: ${hnResults.length} stories, ${hnMentions.length} mentions`);
+      } catch (error) {
+        console.warn(`${tag} HackerNews fetch failed:`, error);
       }
 
-      if (soResults.status === "fulfilled") {
-        const mentions = processStackOverflowData(soResults.value);
-        allMentions.push(...mentions);
-        if (mentions.length > 0) activeSourceNames.push("stackoverflow");
-        console.log(`StackOverflow: ${mentions.length} mentions`);
-      } else {
-        console.warn("StackOverflow fetch failed:", soResults.reason);
+      // Stack Overflow
+      try {
+        const so = new StackOverflowClient();
+        const soResults = await searchSoftwareProductSO(so, productName, {
+          questionLimit: 10,
+          answersPerQuestion: 10,
+        });
+        const soMentions = extractStackOverflowMentions(soResults);
+        rawMentions.push(...soMentions);
+        if (soMentions.length > 0) activeSourceNames.push("stackoverflow");
+        console.log(`${tag} StackOverflow: ${soResults.length} questions, ${soMentions.length} mentions`);
+      } catch (error) {
+        console.warn(`${tag} StackOverflow fetch failed:`, error);
       }
 
-      if (devtoResults.status === "fulfilled") {
-        const mentions = processDevToData(devtoResults.value);
-        allMentions.push(...mentions);
-        if (mentions.length > 0) activeSourceNames.push("devto");
-        console.log(`Dev.to: ${mentions.length} mentions`);
-      } else {
-        console.warn("Dev.to fetch failed:", devtoResults.reason);
+      // Dev.to
+      try {
+        const devto = new DevToClient();
+        const devtoResults = await searchSoftwareProductDevTo(devto, productName, {
+          articleLimit: 10,
+        });
+        const devtoMentions = extractDevToMentions(devtoResults);
+        rawMentions.push(...devtoMentions);
+        if (devtoMentions.length > 0) activeSourceNames.push("devto");
+        console.log(`${tag} Dev.to: ${devtoResults.length} articles, ${devtoMentions.length} mentions`);
+      } catch (error) {
+        console.warn(`${tag} Dev.to fetch failed:`, error);
       }
 
-      // Deduplicate
-      const dedupedMentions = deduplicateMentions(allMentions);
       const sourcesAnalyzed = activeSourceNames.length;
       const sourceLabels: Record<SourceName, string> = {
         reddit: "Reddit",
@@ -481,23 +377,15 @@ export const generateReport = action({
         stackoverflow: "Stack Overflow",
         devto: "Dev.to",
       };
-      const sourceNames = activeSourceNames.map((s) => sourceLabels[s] || s);
 
-      // Compute per-source mention counts
-      const sourceMentionCounts = new Map<SourceName, number>();
-      for (const m of dedupedMentions) {
-        sourceMentionCounts.set(m.source, (sourceMentionCounts.get(m.source) || 0) + 1);
-      }
-      const sourceBreakdown = activeSourceNames.map((name) => ({
-        name,
-        label: sourceLabels[name] || name,
-        mentions: sourceMentionCounts.get(name) || 0,
-      }));
+      console.log(
+        `${tag} [1/6 COLLECT] Done in ${elapsed(stage1Start)} -- ` +
+          `${rawMentions.length} raw mentions from ${sourcesAnalyzed} sources`
+      );
 
-      console.log(`Total: ${dedupedMentions.length} deduplicated mentions from ${sourcesAnalyzed} sources`);
-
-      // Fail early if no data was found
-      if (dedupedMentions.length === 0) {
+      // Handle empty results early
+      if (rawMentions.length === 0) {
+        console.log(`${tag} No mentions found -- setting error status`);
         await ctx.runMutation(internal.pipeline.updateReportStatus, {
           reportId,
           status: "error",
@@ -506,87 +394,145 @@ export const generateReport = action({
         return;
       }
 
-      // Update status: analyzing
+      // Compute per-source mention counts for sourceBreakdown
+      const sourceMentionCounts = new Map<SourceName, number>();
+      for (const m of rawMentions) {
+        sourceMentionCounts.set(m.source, (sourceMentionCounts.get(m.source) || 0) + 1);
+      }
+
+      // ----------------------------------------------------------------
+      // STAGE 2: PREPROCESS -- Deduplicate content
+      // ----------------------------------------------------------------
+      const stage2Start = Date.now();
+      console.log(`${tag} [2/6 PREPROCESS] Deduplicating mentions...`);
+
+      const dedupedMentions = deduplicateMentions(rawMentions);
+      const removedCount = rawMentions.length - dedupedMentions.length;
+      console.log(
+        `${tag} [2/6 PREPROCESS] Done in ${elapsed(stage2Start)} -- ` +
+          `${rawMentions.length} raw -> ${dedupedMentions.length} unique (${removedCount} duplicates removed)`
+      );
+
+      // ----------------------------------------------------------------
+      // STAGE 3: CLASSIFY -- Per-mention sentiment + aspect labels
+      // ----------------------------------------------------------------
+      const stage3Start = Date.now();
+      console.log(
+        `${tag} [3/6 CLASSIFY] Classifying ${dedupedMentions.length} mentions...`
+      );
+
+      await ctx.runMutation(internal.pipeline.updateReportStatus, {
+        reportId,
+        status: "classifying",
+      });
+
+      const classifiedMentions = await classifyMentions(
+        ctx,
+        productName,
+        dedupedMentions
+      );
+      const relevantMentions = classifiedMentions.filter(
+        (m) => m.classification.relevant
+      );
+      const sentimentCounts = {
+        positive: classifiedMentions.filter(
+          (m) => m.classification.sentiment === "positive"
+        ).length,
+        neutral: classifiedMentions.filter(
+          (m) => m.classification.sentiment === "neutral"
+        ).length,
+        negative: classifiedMentions.filter(
+          (m) => m.classification.sentiment === "negative"
+        ).length,
+      };
+      console.log(
+        `${tag} [3/6 CLASSIFY] Done in ${elapsed(stage3Start)} -- ` +
+          `${classifiedMentions.length} classified, ${relevantMentions.length} relevant ` +
+          `(+${sentimentCounts.positive} ~${sentimentCounts.neutral} -${sentimentCounts.negative})`
+      );
+
+      // ----------------------------------------------------------------
+      // STAGE 4: AGGREGATE -- Deterministic score computation
+      // ----------------------------------------------------------------
+      const stage4Start = Date.now();
+      console.log(`${tag} [4/6 AGGREGATE] Computing scores...`);
+
       await ctx.runMutation(internal.pipeline.updateReportStatus, {
         reportId,
         status: "analyzing",
       });
 
-      // Try Gemini analysis, fall back to basic if unavailable
-      let summary: string;
-      let overallScore: number;
-      let strengths: Array<{
-        title: string;
-        description: string;
-        frequency: number;
-        quotes: Array<{ text: string; source: SourceName; author: string; date: string; url: string }>;
-      }>;
-      let issues: typeof strengths;
-      let aspects: Array<{ name: string; score: number; mentions: number; trend: "up" | "down" | "stable" }>;
+      const scores = computeAllScores(classifiedMentions);
+      const aspectSummary = scores.aspects
+        .map((a) => `${a.name}=${a.score}`)
+        .join(", ");
+      console.log(
+        `${tag} [4/6 AGGREGATE] Done in ${elapsed(stage4Start)} -- ` +
+          `overall=${scores.overallScore}, aspects: [${aspectSummary}], ` +
+          `confidence=${(scores.confidence.overall * 100).toFixed(0)}%`
+      );
 
-      const geminiApiKey = process.env.GEMINI_API_KEY;
+      // ----------------------------------------------------------------
+      // STAGE 5: SYNTHESIZE -- LLM generates narrative insights
+      // ----------------------------------------------------------------
+      const stage5Start = Date.now();
+      console.log(`${tag} [5/6 SYNTHESIZE] Generating report narrative...`);
 
-      if (geminiApiKey && dedupedMentions.length > 0) {
-        try {
-          console.log("Using Gemini for analysis...");
-          const gemini = createGeminiClient(geminiApiKey);
-          const analysis = await gemini.analyzeProductFeedback(productName, dedupedMentions);
+      const report = await synthesizeReport(
+        ctx,
+        productName,
+        relevantMentions,
+        scores
+      );
+      console.log(
+        `${tag} [5/6 SYNTHESIZE] Done in ${elapsed(stage5Start)} -- ` +
+          `${report.strengths.length} strengths, ${report.issues.length} issues`
+      );
 
-          summary = analysis.summary;
-          overallScore = analysis.overallScore;
-          const mentionUrlToSource = new Map<string, SourceName>(
-            dedupedMentions.map((m) => [m.url, m.source])
-          );
-          const lookupSource = (url: string): SourceName =>
-            mentionUrlToSource.get(url) || "reddit";
+      // ----------------------------------------------------------------
+      // STAGE 6: ASSEMBLE -- Save to database
+      // ----------------------------------------------------------------
+      const stage6Start = Date.now();
+      console.log(`${tag} [6/6 ASSEMBLE] Saving report to database...`);
 
-          strengths = analysis.strengths.map((s) => ({
-            ...s,
-            quotes: s.quotes.map((q) => ({ ...q, source: lookupSource(q.url) })),
-          }));
-          issues = analysis.issues.map((i) => ({
-            ...i,
-            quotes: i.quotes.map((q) => ({ ...q, source: lookupSource(q.url) })),
-          }));
-          aspects = analysis.aspects.map((a) => ({ ...a, trend: "stable" as const }));
-
-          console.log("Gemini analysis complete");
-        } catch (error) {
-          console.warn("Gemini analysis failed, using fallback:", error);
-          summary = `Analysis of ${dedupedMentions.length} mentions from ${sourceNames.join(" and ") || "online sources"}.`;
-          overallScore = calculateBasicScore(dedupedMentions);
-          strengths = createBasicInsights(dedupedMentions, true);
-          issues = createBasicInsights(dedupedMentions, false);
-          aspects = createBasicAspects(dedupedMentions);
-        }
-      } else {
-        console.log("Using basic analysis (no Gemini key or no mentions)");
-        const positiveMentions = dedupedMentions.filter((m: MentionWithSentiment) => m.isPositive).length;
-        const negativeMentions = dedupedMentions.length - positiveMentions;
-
-        summary = dedupedMentions.length > 0
-          ? `Analysis of ${dedupedMentions.length} mentions from ${sourceNames.join(" and ") || "online sources"}. Found ${positiveMentions} positive and ${negativeMentions} negative mentions.`
-          : `Limited data found for "${productName}".`;
-        overallScore = calculateBasicScore(dedupedMentions);
-        strengths = createBasicInsights(dedupedMentions, true);
-        issues = createBasicInsights(dedupedMentions, false);
-        aspects = createBasicAspects(dedupedMentions);
+      // Build sourceBreakdown from deduped mentions
+      const dedupedSourceCounts = new Map<SourceName, number>();
+      for (const m of dedupedMentions) {
+        dedupedSourceCounts.set(m.source, (dedupedSourceCounts.get(m.source) || 0) + 1);
       }
+      const sourceBreakdown = activeSourceNames.map((name) => ({
+        name,
+        label: sourceLabels[name] || name,
+        mentions: dedupedSourceCounts.get(name) || 0,
+      }));
 
-      // Save results
       await ctx.runMutation(internal.pipeline.saveReportResults, {
         reportId,
-        overallScore,
-        totalMentions: dedupedMentions.length,
+        overallScore: scores.overallScore,
+        totalMentions: relevantMentions.length,
         sourcesAnalyzed: Math.max(sourcesAnalyzed, 1),
-        summary,
-        strengths,
-        issues,
-        aspects,
+        summary: report.summary,
+        strengths: report.strengths,
+        issues: report.issues,
+        aspects: scores.aspects,
         sourceBreakdown,
+        issueRadar: scores.issueRadar,
+        confidence: scores.confidence,
       });
+
+      console.log(
+        `${tag} [6/6 ASSEMBLE] Done in ${elapsed(stage6Start)}`
+      );
+      console.log(
+        `${tag} Pipeline complete in ${elapsed(pipelineStart)} -- ` +
+          `score=${scores.overallScore}, mentions=${relevantMentions.length}, ` +
+          `strengths=${report.strengths.length}, issues=${report.issues.length}`
+      );
     } catch (error) {
-      console.error("Pipeline error:", error);
+      console.error(
+        `${tag} Pipeline failed after ${elapsed(pipelineStart)}:`,
+        error
+      );
       await ctx.runMutation(internal.pipeline.updateReportStatus, {
         reportId,
         status: "error",

@@ -7,6 +7,8 @@ import { ProductReport } from "@/types/report";
 import ScoreGauge from "./ScoreGauge";
 import InsightCard from "./InsightCard";
 import AspectScoreCard from "./AspectScore";
+import ConfidenceIndicator from "./ConfidenceIndicator";
+import IssueRadar from "./IssueRadar";
 import { ArrowLeft, Calendar, Database, FileText, RefreshCw, Share2, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -196,10 +198,18 @@ const Dashboard = ({ report, reportId, onBack, onRefresh, isRefreshing }: Dashbo
           <h2 className="text-xl font-bold text-foreground mb-4">
             Aspect Analysis
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {report.aspects.map((aspect, index) => (
               <AspectScoreCard key={aspect.name} aspect={aspect} index={index} />
             ))}
+          </div>
+        </section>
+
+        {/* Confidence & Issue Radar */}
+        <section className="mb-10">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <ConfidenceIndicator confidence={report.confidence} />
+            <IssueRadar items={report.issueRadar} />
           </div>
         </section>
 

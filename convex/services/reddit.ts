@@ -403,6 +403,36 @@ const PRODUCT_SUBREDDITS: Record<string, string[]> = {
   netflix: ["netflix"],
 };
 
+// Generate candidate subreddit names from a product name.
+// e.g. "iPhone 15 Pro" -> ["iPhone15Pro", "iphone15pro", "iPhone15", "iphone"]
+function generateSubredditCandidates(productName: string): string[] {
+  const words = productName.trim().split(/\s+/);
+  const candidates: string[] = [];
+  const seen = new Set<string>();
+
+  const add = (name: string) => {
+    const lower = name.toLowerCase();
+    if (name.length > 1 && !seen.has(lower)) {
+      seen.add(lower);
+      candidates.push(name);
+    }
+  };
+
+  // Full name with spaces removed (preserving original casing)
+  add(words.join(""));
+
+  // Full name lowercased with spaces removed
+  add(words.join("").toLowerCase());
+
+  // Progressive word combinations from the start: "iPhone15", "iPhone"
+  for (let i = words.length - 1; i >= 1; i--) {
+    add(words.slice(0, i).join(""));
+    add(words.slice(0, i).join("").toLowerCase());
+  }
+
+  return candidates;
+}
+
 function getProductSubreddits(productName: string): string[] {
   const key = productName.toLowerCase().trim();
   const exact = PRODUCT_SUBREDDITS[key];
@@ -410,7 +440,9 @@ function getProductSubreddits(productName: string): string[] {
   for (const [k, v] of Object.entries(PRODUCT_SUBREDDITS)) {
     if (key.includes(k) || k.includes(key)) return v;
   }
-  return [];
+
+  // No hardcoded match -- generate candidate subreddit names from the product name
+  return generateSubredditCandidates(productName);
 }
 
 // Keywords that indicate software/product discussion
@@ -501,7 +533,7 @@ export async function searchSoftwareProduct(
   productName: string,
   options: SoftwareSearchOptions = {}
 ): Promise<RedditPostWithComments[]> {
-  const { postLimit = 15, commentsPerPost = 10, includeGenericSearch = true } = options;
+  const { postLimit = 25, commentsPerPost = 25, includeGenericSearch = true } = options;
   const allResults: RedditPostWithComments[] = [];
   const seenPostIds = new Set<string>();
 
@@ -518,12 +550,12 @@ export async function searchSoftwareProduct(
 
   // 1. Search product-specific subreddits first (highest signal)
   const productSubs = getProductSubreddits(productName);
-  for (const subreddit of productSubs.slice(0, 2)) {
+  for (const subreddit of productSubs) {
     if (allResults.length >= postLimit) break;
     try {
       const results = await client.searchWithComments(productName, {
         subreddit,
-        postLimit: 5,
+        postLimit: 10,
         commentsPerPost,
       });
       addResults(results);
@@ -533,7 +565,7 @@ export async function searchSoftwareProduct(
   }
 
   // 2. Search software-focused subreddits (broader net)
-  for (const subreddit of SOFTWARE_SUBREDDITS.slice(0, 3)) {
+  for (const subreddit of SOFTWARE_SUBREDDITS.slice(0, 6)) {
     if (allResults.length >= postLimit) break;
     try {
       const results = await client.searchWithComments(productName, {
@@ -549,11 +581,11 @@ export async function searchSoftwareProduct(
 
   // 3. Targeted queries across all of Reddit
   if (allResults.length < postLimit && includeGenericSearch) {
-    for (const query of queries.slice(0, 2)) {
+    for (const query of queries.slice(0, 4)) {
       if (allResults.length >= postLimit) break;
       try {
         const results = await client.searchWithComments(query, {
-          postLimit: 5,
+          postLimit: 10,
           commentsPerPost,
         });
         addResults(results);

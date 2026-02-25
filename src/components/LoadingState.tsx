@@ -1,14 +1,15 @@
-import { Activity, Search, BarChart3, CheckCircle2, FileText } from "lucide-react";
+import { Activity, Search, BarChart3, CheckCircle2, FileText, Tags } from "lucide-react";
 
 interface LoadingStateProps {
   productName: string;
-  status?: "pending" | "fetching" | "analyzing" | "complete" | "error";
+  status?: "pending" | "fetching" | "classifying" | "analyzing" | "complete" | "error";
 }
 
 const steps = [
   { id: "pending", icon: Search, label: "Starting analysis..." },
   { id: "fetching", icon: FileText, label: "Fetching discussions across the web..." },
-  { id: "analyzing", icon: BarChart3, label: "Analyzing sentiment..." },
+  { id: "classifying", icon: Tags, label: "Classifying mentions..." },
+  { id: "analyzing", icon: BarChart3, label: "Computing scores..." },
   { id: "complete", icon: CheckCircle2, label: "Generating report..." },
 ];
 
