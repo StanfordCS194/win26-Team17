@@ -3,7 +3,7 @@ import { ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ConfidenceIndicatorProps {
-  confidence: ConfidenceType;
+  confidence?: ConfidenceType | null;
 }
 
 const getColor = (value: number) => {

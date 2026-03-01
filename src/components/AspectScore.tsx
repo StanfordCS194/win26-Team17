@@ -5,9 +5,11 @@ import { cn } from "@/lib/utils";
 interface AspectScoreProps {
   aspect: AspectScoreType;
   index: number;
+  /** Average score for this aspect across all products (baseline for comparison) */
+  baselineAverage?: number;
 }
 
-const AspectScoreCard = ({ aspect, index }: AspectScoreProps) => {
+const AspectScoreCard = ({ aspect, index, baselineAverage }: AspectScoreProps) => {
   const getScoreColor = (score: number) => {
     if (score >= 70) return "bg-pulse-positive";
     if (score >= 50) return "bg-pulse-neutral";
@@ -56,12 +58,18 @@ const AspectScoreCard = ({ aspect, index }: AspectScoreProps) => {
       </div>
 
       {/* Score Display */}
-      <div className="flex items-end gap-3 mb-4">
+      <div className="flex items-end gap-3 mb-1">
         <span className={cn("text-4xl font-bold", getScoreTextColor(aspect.score))}>
           {aspect.score}
         </span>
         <span className="text-sm text-muted-foreground mb-1">/ 100</span>
       </div>
+      {baselineAverage !== undefined && (
+        <p className="text-sm text-muted-foreground mb-4">
+          Avg score across all searches: <span className="font-medium text-foreground">{baselineAverage}</span>
+        </p>
+      )}
+      {baselineAverage === undefined && <div className="mb-4" />}
 
       {/* Progress Bar */}
       <div className="w-full bg-secondary rounded-full h-2 mb-3 overflow-hidden">
