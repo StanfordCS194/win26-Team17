@@ -198,7 +198,7 @@ const Dashboard = ({ report, reportId, onBack, onRefresh, isRefreshing }: Dashbo
           <h2 className="text-xl font-bold text-foreground mb-4">
             Aspect Analysis
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {report.aspects.map((aspect, index) => (
               <AspectScoreCard key={aspect.name} aspect={aspect} index={index} />
             ))}

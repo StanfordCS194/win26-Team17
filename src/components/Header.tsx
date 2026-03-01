@@ -18,6 +18,7 @@ const HOVER_CLOSE_DELAY = 100;
 const Header = () => {
   const location = useLocation();
   const isCompare = location.pathname === "/compare";
+  const isAnalyze = location.pathname === "/analyze";
   const [helpOpen, setHelpOpen] = useState(false);
   const [helpPinned, setHelpPinned] = useState(false);
   const helpLeaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -50,10 +51,10 @@ const Header = () => {
           <Tooltip>
             <TooltipTrigger asChild>
               <Link
-                to="/"
+                to="/analyze"
                 className={cn(
                   "hover:text-foreground transition-colors",
-                  !isCompare && "text-foreground font-medium"
+                  isAnalyze && "text-foreground font-medium"
                 )}
               >
                 Product Intelligence
