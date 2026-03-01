@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ConvexProvider, ConvexReactClient } from "convex/react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import Landing from "./pages/Landing";
 import Index from "./pages/Index";
 import KPIDashboard from "./pages/KPIDashboard";
 import NotFound from "./pages/NotFound";
@@ -22,7 +23,8 @@ const App = () => (
         <BrowserRouter>
           <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><span className="text-muted-foreground">Loading...</span></div>}>
             <Routes>
-              <Route path="/" element={<Index />} />
+              <Route path="/" element={<Landing />} />
+              <Route path="/analyze" element={<Index />} />
               <Route path="/compare" element={<Compare />} />
               <Route path="/kpis" element={<KPIDashboard />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
