@@ -189,7 +189,7 @@ const Index = () => {
     issues: r.issues ?? [],
     aspects: r.aspects ?? [],
     issueRadar: r.issueRadar ?? [],
-    confidence: r.confidence ?? { overall: 0, coverage: 0, agreement: 0, sourceDiversity: 0 },
+    confidence: r.confidence,
   });
 
   return (
