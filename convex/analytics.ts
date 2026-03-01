@@ -46,6 +46,92 @@ export const recordDefensibilityRating = mutation({
   },
 });
 
+export const recordFeedback = mutation({
+  args: {
+    reportId: v.id("productReports"),
+    sessionId: v.string(),
+    timestamp: v.number(),
+    usefulness: v.optional(v.number()),
+    defensibility: v.optional(v.number()),
+    easeOfUse: v.optional(v.number()),
+    relevance: v.optional(v.number()),
+    nps: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const doc: Record<string, unknown> = {
+      reportId: args.reportId,
+      sessionId: args.sessionId,
+      timestamp: args.timestamp,
+    };
+    if (args.usefulness != null && args.usefulness >= 1 && args.usefulness <= 5) {
+      doc.usefulness = args.usefulness;
+    }
+    if (args.defensibility != null && args.defensibility >= 1 && args.defensibility <= 5) {
+      doc.defensibility = args.defensibility;
+    }
+    if (args.easeOfUse != null && args.easeOfUse >= 1 && args.easeOfUse <= 5) {
+      doc.easeOfUse = args.easeOfUse;
+    }
+    if (args.relevance != null && args.relevance >= 1 && args.relevance <= 5) {
+      doc.relevance = args.relevance;
+    }
+    if (args.nps != null && args.nps >= 0 && args.nps <= 10) {
+      doc.nps = args.nps;
+    }
+    const hasAny = "usefulness" in doc || "defensibility" in doc || "easeOfUse" in doc || "relevance" in doc || "nps" in doc;
+    if (!hasAny) return;
+    await ctx.db.insert("feedback", doc as {
+      reportId: typeof args.reportId;
+      sessionId: string;
+      timestamp: number;
+      usefulness?: number;
+      defensibility?: number;
+      easeOfUse?: number;
+      relevance?: number;
+      nps?: number;
+    });
+  },
+});
+
+export const getFeedbackStats = query({
+  args: {},
+  handler: async (ctx) => {
+    const all = await ctx.db.query("feedback").collect();
+    const n = all.length;
+    const withUsefulness = all.filter((r) => r.usefulness != null);
+    const withDefensibility = all.filter((r) => r.defensibility != null);
+    const withEaseOfUse = all.filter((r) => r.easeOfUse != null);
+    const withRelevance = all.filter((r) => r.relevance != null);
+    const withNps = all.filter((r) => r.nps != null);
+
+    const usefulnessAverage = withUsefulness.length === 0 ? 0 : Math.round((withUsefulness.reduce((a, r) => a + (r.usefulness ?? 0), 0) / withUsefulness.length) * 10) / 10;
+    const defensibilityAverage = withDefensibility.length === 0 ? 0 : Math.round((withDefensibility.reduce((a, r) => a + (r.defensibility ?? 0), 0) / withDefensibility.length) * 10) / 10;
+    const easeOfUseAverage = withEaseOfUse.length === 0 ? 0 : Math.round((withEaseOfUse.reduce((a, r) => a + (r.easeOfUse ?? 0), 0) / withEaseOfUse.length) * 10) / 10;
+    const relevanceAverage = withRelevance.length === 0 ? 0 : Math.round((withRelevance.reduce((a, r) => a + (r.relevance ?? 0), 0) / withRelevance.length) * 10) / 10;
+
+    const npsN = withNps.length;
+    const npsAverage = npsN === 0 ? 0 : Math.round((withNps.reduce((a, r) => a + (r.nps ?? 0), 0) / npsN) * 10) / 10;
+    const promoters = withNps.filter((r) => (r.nps ?? 0) >= 9).length;
+    const detractors = withNps.filter((r) => (r.nps ?? 0) <= 6).length;
+    const promotersPct = npsN === 0 ? 0 : Math.round((promoters / npsN) * 1000) / 10;
+    const detractorsPct = npsN === 0 ? 0 : Math.round((detractors / npsN) * 1000) / 10;
+    const npsScore = npsN === 0 ? null : promotersPct - detractorsPct;
+
+    return {
+      usefulnessAverage,
+      defensibilityAverage,
+      easeOfUseAverage,
+      relevanceAverage,
+      feedbackCount: n,
+      npsAverage,
+      npsCount: npsN,
+      npsScore,
+      promotersPct,
+      detractorsPct,
+    };
+  },
+});
+
 export const getSourceCoverageStats = query({
   args: {},
   handler: async (ctx) => {
@@ -256,6 +342,7 @@ export const getKPIDashboard = query({
   handler: async (ctx) => {
     const events = await ctx.db.query("analyticsEvents").collect();
     const ratings = await ctx.db.query("defensibilityRatings").collect();
+    const feedbackList = await ctx.db.query("feedback").collect();
     const reports = await ctx.db
       .query("productReports")
       .filter((q) => q.eq(q.field("status"), "complete"))
@@ -342,12 +429,28 @@ export const getKPIDashboard = query({
         ? 0
         : Math.round((sessionsWithQuoteEngaged / totalDashboardSessions) * 1000) / 10;
 
-    // Defensibility
-    const defensibilityCount = ratings.length;
+    // Defensibility (legacy defensibilityRatings + feedback.defensibility where provided)
+    const feedbackDefensibility = feedbackList.filter((r) => r.defensibility != null);
+    const defensibilitySum = ratings.reduce((acc, r) => acc + r.score, 0) + feedbackDefensibility.reduce((acc, r) => acc + (r.defensibility ?? 0), 0);
+    const defensibilityCount = ratings.length + feedbackDefensibility.length;
     const defensibilityAverage =
       defensibilityCount === 0
         ? 0
-        : Math.round((ratings.reduce((acc, r) => acc + r.score, 0) / defensibilityCount) * 10) / 10;
+        : Math.round((defensibilitySum / defensibilityCount) * 10) / 10;
+
+    // Feedback KPIs (from feedback table; only average over responses that have each field)
+    const feedbackCount = feedbackList.length;
+    const withUsefulness = feedbackList.filter((r) => r.usefulness != null);
+    const withEaseOfUse = feedbackList.filter((r) => r.easeOfUse != null);
+    const withRelevance = feedbackList.filter((r) => r.relevance != null);
+    const withNps = feedbackList.filter((r) => r.nps != null);
+    const usefulnessAverage = withUsefulness.length === 0 ? 0 : Math.round((withUsefulness.reduce((a, r) => a + (r.usefulness ?? 0), 0) / withUsefulness.length) * 10) / 10;
+    const easeOfUseAverage = withEaseOfUse.length === 0 ? 0 : Math.round((withEaseOfUse.reduce((a, r) => a + (r.easeOfUse ?? 0), 0) / withEaseOfUse.length) * 10) / 10;
+    const relevanceAverage = withRelevance.length === 0 ? 0 : Math.round((withRelevance.reduce((a, r) => a + (r.relevance ?? 0), 0) / withRelevance.length) * 10) / 10;
+    const npsAverage = withNps.length === 0 ? 0 : Math.round((withNps.reduce((a, r) => a + (r.nps ?? 0), 0) / withNps.length) * 10) / 10;
+    const promoters = withNps.filter((r) => (r.nps ?? 0) >= 9).length;
+    const detractors = withNps.filter((r) => (r.nps ?? 0) <= 6).length;
+    const npsScore = withNps.length === 0 ? null : Math.round((promoters / withNps.length) * 100 - (detractors / withNps.length) * 100);
 
     // Return usage (users who ran a second report within 7 days)
     const searchWithUserId = events.filter(
@@ -390,6 +493,12 @@ export const getKPIDashboard = query({
       returnUsageRate,
       totalUsersWithOneSearch,
       usersWithSecondWithin7Days,
+      usefulnessAverage,
+      easeOfUseAverage,
+      relevanceAverage,
+      feedbackCount,
+      npsAverage,
+      npsScore,
     };
   },
 });

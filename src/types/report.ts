@@ -52,5 +52,5 @@ export interface ProductReport {
   issues: Insight[];
   aspects: AspectScore[];
   issueRadar: IssueRadarItem[];
-  confidence: ConfidenceIndicator;
+  confidence?: ConfidenceIndicator;
 }

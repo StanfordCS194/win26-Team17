@@ -94,6 +94,59 @@ export const listRecentReports = query({
   },
 });
 
+/**
+ * Average overall score across all completed reports.
+ * Used as baseline under "Overall Sentiment" so users can compare to all products we've analyzed.
+ */
+export const getOverallScoreBaseline = query({
+  args: {},
+  handler: async (ctx) => {
+    const reports = await ctx.db
+      .query("productReports")
+      .filter((q) => q.eq(q.field("status"), "complete"))
+      .collect();
+
+    if (reports.length === 0) return null;
+    const sum = reports.reduce((acc, r) => acc + (r.overallScore ?? 50), 0);
+    return Math.round((sum / reports.length) * 10) / 10;
+  },
+});
+
+/**
+ * Average score per aspect across all completed reports.
+ * Used as baseline so users can compare "this product vs average of all products we've analyzed".
+ */
+export const getAspectBaselines = query({
+  args: {},
+  handler: async (ctx) => {
+    const reports = await ctx.db
+      .query("productReports")
+      .filter((q) => q.eq(q.field("status"), "complete"))
+      .collect();
+
+    const sumByAspect = new Map<string, number>();
+    const countByAspect = new Map<string, number>();
+
+    for (const report of reports) {
+      const aspects = report.aspects ?? [];
+      for (const a of aspects) {
+        const name = a.name;
+        sumByAspect.set(name, (sumByAspect.get(name) ?? 0) + a.score);
+        countByAspect.set(name, (countByAspect.get(name) ?? 0) + 1);
+      }
+    }
+
+    const baselines: Record<string, number> = {};
+    for (const [name, sum] of sumByAspect) {
+      const count = countByAspect.get(name) ?? 0;
+      if (count > 0) {
+        baselines[name] = Math.round((sum / count) * 10) / 10;
+      }
+    }
+    return baselines;
+  },
+});
+
 export const getReportStatus = query({
   args: { reportId: v.id("productReports") },
   handler: async (ctx, args) => {

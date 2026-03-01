@@ -87,4 +87,16 @@ export default defineSchema({
   })
     .index("by_reportId", ["reportId"])
     .index("by_sessionId", ["sessionId"]),
+  feedback: defineTable({
+    reportId: v.id("productReports"),
+    sessionId: v.string(),
+    timestamp: v.number(),
+    usefulness: v.optional(v.number()),
+    defensibility: v.optional(v.number()),
+    easeOfUse: v.optional(v.number()),
+    relevance: v.optional(v.number()),
+    nps: v.optional(v.number()),
+  })
+    .index("by_reportId", ["reportId"])
+    .index("by_sessionId", ["sessionId"]),
 });

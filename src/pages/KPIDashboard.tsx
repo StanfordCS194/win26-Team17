@@ -147,6 +147,38 @@ const KPIDashboard = () => {
 
         <section className="bg-card rounded-lg border border-border p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-foreground mb-4">
+            Feedback (survey)
+          </h2>
+          <ul className="space-y-2 text-sm">
+            <li>
+              <span className="text-muted-foreground">Usefulness (1–5 avg): </span>
+              <span className="font-medium">{data.usefulnessAverage ?? "—"}</span>
+            </li>
+            <li>
+              <span className="text-muted-foreground">Ease of use (1–5 avg): </span>
+              <span className="font-medium">{data.easeOfUseAverage ?? "—"}</span>
+            </li>
+            <li>
+              <span className="text-muted-foreground">Relevance (1–5 avg): </span>
+              <span className="font-medium">{data.relevanceAverage ?? "—"}</span>
+            </li>
+            <li>
+              <span className="text-muted-foreground">Feedback responses: </span>
+              <span className="font-medium">{data.feedbackCount ?? 0}</span>
+            </li>
+            <li>
+              <span className="text-muted-foreground">NPS average (0–10): </span>
+              <span className="font-medium">{data.npsAverage ?? "—"}</span>
+            </li>
+            <li>
+              <span className="text-muted-foreground">NPS score (promoters − detractors): </span>
+              <span className="font-medium">{data.npsScore != null ? data.npsScore : "—"}</span>
+            </li>
+          </ul>
+        </section>
+
+        <section className="bg-card rounded-lg border border-border p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-foreground mb-4">
             Return Usage Rate
           </h2>
           <ul className="space-y-2 text-sm">

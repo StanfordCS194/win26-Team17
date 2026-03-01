@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
 import { getSessionId, getUserId } from "@/lib/session";
@@ -22,9 +22,18 @@ interface DashboardProps {
 
 const Dashboard = ({ report, reportId, onBack, onRefresh, isRefreshing }: DashboardProps) => {
   const [copied, setCopied] = useState(false);
-  const [defensibilitySubmitted, setDefensibilitySubmitted] = useState(false);
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+  const [feedbackValues, setFeedbackValues] = useState<{
+    usefulness?: number;
+    defensibility?: number;
+    easeOfUse?: number;
+    relevance?: number;
+    nps?: number;
+  }>({});
   const recordEvent = useMutation(api.analytics.recordEvent);
-  const recordDefensibilityRating = useMutation(api.analytics.recordDefensibilityRating);
+  const recordFeedback = useMutation(api.analytics.recordFeedback);
+  const aspectBaselines = useQuery(api.reports.getAspectBaselines);
+  const overallScoreBaseline = useQuery(api.reports.getOverallScoreBaseline);
 
   useEffect(() => {
     recordEvent({
@@ -40,14 +49,26 @@ const Dashboard = ({ report, reportId, onBack, onRefresh, isRefreshing }: Dashbo
   const reportAge = Date.now() - new Date(report.generatedAt).getTime();
   const isStale = reportAge > 24 * 60 * 60 * 1000;
 
-  const handleDefensibilityRating = (score: number) => {
-    recordDefensibilityRating({
+  const hasAnyFeedback =
+    feedbackValues.usefulness != null ||
+    feedbackValues.defensibility != null ||
+    feedbackValues.easeOfUse != null ||
+    feedbackValues.relevance != null ||
+    feedbackValues.nps != null;
+
+  const handleFeedbackSubmit = () => {
+    if (!hasAnyFeedback) return;
+    recordFeedback({
       reportId,
       sessionId: getSessionId(),
-      score,
       timestamp: Date.now(),
+      ...(feedbackValues.usefulness != null && { usefulness: feedbackValues.usefulness }),
+      ...(feedbackValues.defensibility != null && { defensibility: feedbackValues.defensibility }),
+      ...(feedbackValues.easeOfUse != null && { easeOfUse: feedbackValues.easeOfUse }),
+      ...(feedbackValues.relevance != null && { relevance: feedbackValues.relevance }),
+      ...(feedbackValues.nps != null && { nps: feedbackValues.nps }),
     }).catch(() => {});
-    setDefensibilitySubmitted(true);
+    setFeedbackSubmitted(true);
   };
 
   const handleShare = async () => {
@@ -157,6 +178,12 @@ const Dashboard = ({ report, reportId, onBack, onRefresh, isRefreshing }: Dashbo
                 size="lg"
                 label="Overall Sentiment"
               />
+              {overallScoreBaseline !== undefined && overallScoreBaseline !== null && (
+                <p className="text-sm text-muted-foreground mt-2 text-center">
+                  Avg score across all searches:{" "}
+                  <span className="font-medium text-foreground">{overallScoreBaseline}</span>
+                </p>
+              )}
             </div>
           </div>
 
@@ -200,7 +227,12 @@ const Dashboard = ({ report, reportId, onBack, onRefresh, isRefreshing }: Dashbo
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {report.aspects.map((aspect, index) => (
-              <AspectScoreCard key={aspect.name} aspect={aspect} index={index} />
+              <AspectScoreCard
+                key={aspect.name}
+                aspect={aspect}
+                index={index}
+                baselineAverage={aspectBaselines?.[aspect.name]}
+              />
             ))}
           </div>
         </section>
@@ -254,24 +286,111 @@ const Dashboard = ({ report, reportId, onBack, onRefresh, isRefreshing }: Dashbo
           </section>
         </div>
 
-        {/* Defensibility prompt */}
-        {!defensibilitySubmitted && (
+        {/* Feedback */}
+        {feedbackSubmitted ? (
+          <div className="mt-10 p-6 bg-card rounded-xl border border-border text-center">
+            <p className="text-foreground font-medium">Thank you for submitting your feedback!</p>
+          </div>
+        ) : (
           <div className="mt-10 p-6 bg-card rounded-xl border border-border">
-            <p className="text-sm font-medium text-foreground mb-3">
-              I could share this with my team or leadership
+            <h3 className="text-lg font-semibold text-foreground mb-1">Feedback</h3>
+            <p className="text-sm text-muted-foreground mb-6">
+              Let us know what you think and help us improve PulseCheck.
             </p>
-            <div className="flex gap-2">
-              {[1, 2, 3, 4, 5].map((score) => (
-                <Button
-                  key={score}
-                  variant="outline"
-                  size="sm"
-                  className="w-10 h-10 p-0"
-                  onClick={() => handleDefensibilityRating(score)}
-                >
-                  {score}
-                </Button>
-              ))}
+
+            <div className="space-y-5">
+              <div>
+                <p className="text-sm font-medium text-foreground mb-2">How useful was this report? (1–5)</p>
+                <div className="flex gap-2">
+                  {[1, 2, 3, 4, 5].map((score) => (
+                    <Button
+                      key={score}
+                      variant={feedbackValues.usefulness === score ? "default" : "outline"}
+                      size="sm"
+                      className="w-10 h-10 p-0"
+                      onClick={() => setFeedbackValues((v) => ({ ...v, usefulness: score }))}
+                    >
+                      {score}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm font-medium text-foreground mb-2">I could share this with my team or leadership (1–5)</p>
+                <div className="flex gap-2">
+                  {[1, 2, 3, 4, 5].map((score) => (
+                    <Button
+                      key={score}
+                      variant={feedbackValues.defensibility === score ? "default" : "outline"}
+                      size="sm"
+                      className="w-10 h-10 p-0"
+                      onClick={() => setFeedbackValues((v) => ({ ...v, defensibility: score }))}
+                    >
+                      {score}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm font-medium text-foreground mb-2">How easy was it to use PulseCheck? (1–5)</p>
+                <div className="flex gap-2">
+                  {[1, 2, 3, 4, 5].map((score) => (
+                    <Button
+                      key={score}
+                      variant={feedbackValues.easeOfUse === score ? "default" : "outline"}
+                      size="sm"
+                      className="w-10 h-10 p-0"
+                      onClick={() => setFeedbackValues((v) => ({ ...v, easeOfUse: score }))}
+                    >
+                      {score}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm font-medium text-foreground mb-2">How relevant were the insights? (1–5)</p>
+                <div className="flex gap-2">
+                  {[1, 2, 3, 4, 5].map((score) => (
+                    <Button
+                      key={score}
+                      variant={feedbackValues.relevance === score ? "default" : "outline"}
+                      size="sm"
+                      className="w-10 h-10 p-0"
+                      onClick={() => setFeedbackValues((v) => ({ ...v, relevance: score }))}
+                    >
+                      {score}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm font-medium text-foreground mb-2">How likely are you to recommend PulseCheck? (0–10)</p>
+                <div className="flex flex-wrap gap-2">
+                  {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((score) => (
+                    <Button
+                      key={score}
+                      variant={feedbackValues.nps === score ? "default" : "outline"}
+                      size="sm"
+                      className="w-9 h-9 p-0 text-xs"
+                      onClick={() => setFeedbackValues((v) => ({ ...v, nps: score }))}
+                    >
+                      {score}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              <Button
+                onClick={handleFeedbackSubmit}
+                disabled={!hasAnyFeedback}
+                className="mt-2"
+              >
+                Submit feedback
+              </Button>
             </div>
           </div>
         )}
