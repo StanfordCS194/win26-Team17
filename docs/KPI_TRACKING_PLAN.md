@@ -10,12 +10,12 @@
 
 - **Completion (report completion):** A session is “complete” when the same `sessionId` has both a `search_submitted` event and a `dashboard_viewed` event. **Report completion rate** = (sessions that completed / sessions that submitted a search) × 100.
 - **Session:** Identified by `sessionId` from `getSessionId()` (stored in `localStorage` under `pulsecheck_session_id`). One session = one browser/device visit until the storage is cleared.
-- **User:** Currently the same as session (no persistent user ID across devices). For “return usage” we would use a long-lived anonymous ID; not yet implemented.
+- **User:** Currently the same as session (no persistent user ID across devices). Return usage is computed per **session** (see below).
 - **First interaction (time to insight):** For sessions that have both `search_submitted` and `dashboard_viewed`, we take the earliest timestamp of each and compute the difference. Only sessions where `dashboard_viewed` &gt; `search_submitted` are included. **Time to insight** = average of those differences (in seconds or minutes).
 - **Source:** A data source that contributed mentions to a report (e.g. Reddit, G2). **Source coverage** = count of unique sources per report; stored as `sourcesAnalyzed` on each report.
 - **Evidence engagement:** A session that viewed the dashboard is “engaged with evidence” if it has at least one `quote_engaged` event (user expanded “Show evidence quotes” on an insight). **Evidence engagement rate** = (sessions with quote_engaged / sessions with dashboard_viewed) × 100.
 - **Defensibility score:** 1–5 rating from the in-app prompt “I could share this with my team or leadership,” stored per report/session in `defensibilityRatings`. **Insight defensibility score** = average of all ratings.
-- **Return usage:** A **user** is identified by a long-lived `userId` from `getUserId()` (localStorage key `pulsecheck_user_id`). **Return usage rate** = (users who ran a second report within 7 days of their first / users who ran at least one report) × 100. “Second report within 7 days” = same user has 2+ `search_submitted` events and the second event’s timestamp is within 7 days of the first.
+- **Return usage:** Computed per **session** (same as other KPIs). **Return usage rate** = (sessions that did a second search within 7 days of their first / sessions with at least one search) × 100. We use all `search_submitted` events grouped by `sessionId`; no `userId` required. All metrics use the full dataset in Convex (no time window).
 
 ---
 
@@ -28,7 +28,7 @@
 | Evidence engagement rate | `dashboard_viewed`, `quote_engaged` (by sessionId) | `getEvidenceEngagementRate` | 60%+ target |
 | Insight defensibility score | `defensibilityRatings` table | `getDefensibilityScore` | 4/5 average target |
 | Source coverage per report | `productReports.sourcesAnalyzed` (complete reports) | `getSourceCoverageStats` | 2+ sources target |
-| Return usage rate | `search_submitted` with `userId` (long-lived); 2nd search within 7 days | `getReturnUsageRate` | 40%+ target; uses `getUserId()` |
+| Return usage rate | `search_submitted` by `sessionId`; 2nd search within 7 days (full dataset) | `getReturnUsageRate`, `getKPIDashboard` | 40%+ target; session-based |
 
 All of the above (except return usage) are also returned in one call via **`getKPIDashboard`**. Internal KPI page: `/kpis`.
 
