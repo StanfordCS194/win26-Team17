@@ -299,40 +299,38 @@ export const getDefensibilityScore = query({
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
+/** Return usage: session-based (2nd search within 7 days). Uses full dataset. */
 export const getReturnUsageRate = query({
   args: {},
   handler: async (ctx) => {
     const events = await ctx.db.query("analyticsEvents").collect();
-    const searchEvents = events.filter(
-      (e) => e.eventType === "search_submitted" && e.userId
-    );
+    const searchEvents = events.filter((e) => e.eventType === "search_submitted");
 
-    const timestampsByUser = new Map<string, number[]>();
+    const timestampsBySession = new Map<string, number[]>();
     for (const e of searchEvents) {
-      const uid = e.userId!;
-      const list = timestampsByUser.get(uid) ?? [];
+      const list = timestampsBySession.get(e.sessionId) ?? [];
       list.push(e.timestamp);
-      timestampsByUser.set(uid, list);
+      timestampsBySession.set(e.sessionId, list);
     }
 
-    let usersWithSecondWithin7Days = 0;
-    for (const [, timestamps] of timestampsByUser) {
+    let sessionsWithSecondWithin7Days = 0;
+    for (const [, timestamps] of timestampsBySession) {
       const sorted = [...timestamps].sort((a, b) => a - b);
       if (sorted.length >= 2 && sorted[1] - sorted[0] <= SEVEN_DAYS_MS) {
-        usersWithSecondWithin7Days += 1;
+        sessionsWithSecondWithin7Days += 1;
       }
     }
 
-    const totalUsersWithOneSearch = timestampsByUser.size;
+    const totalSessionsWithOneSearch = timestampsBySession.size;
     const returnUsageRate =
-      totalUsersWithOneSearch === 0
+      totalSessionsWithOneSearch === 0
         ? 0
-        : Math.round((usersWithSecondWithin7Days / totalUsersWithOneSearch) * 1000) / 10;
+        : Math.round((sessionsWithSecondWithin7Days / totalSessionsWithOneSearch) * 1000) / 10;
 
     return {
       returnUsageRate,
-      totalUsersWithOneSearch,
-      usersWithSecondWithin7Days,
+      totalSessionsWithOneSearch,
+      sessionsWithSecondWithin7Days,
     };
   },
 });
@@ -340,6 +338,7 @@ export const getReturnUsageRate = query({
 export const getKPIDashboard = query({
   args: {},
   handler: async (ctx) => {
+    // All metrics are computed over the full dataset in Convex (no time window).
     const events = await ctx.db.query("analyticsEvents").collect();
     const ratings = await ctx.db.query("defensibilityRatings").collect();
     const feedbackList = await ctx.db.query("feedback").collect();
@@ -348,7 +347,7 @@ export const getKPIDashboard = query({
       .filter((q) => q.eq(q.field("status"), "complete"))
       .collect();
 
-    // Completion rate
+    // Completion rate (all events: unique sessions with search vs sessions that also viewed dashboard)
     const searchSessions = new Set(
       events
         .filter((e) => e.eventType === "search_submitted")
@@ -452,29 +451,26 @@ export const getKPIDashboard = query({
     const detractors = withNps.filter((r) => (r.nps ?? 0) <= 6).length;
     const npsScore = withNps.length === 0 ? null : Math.round((promoters / withNps.length) * 100 - (detractors / withNps.length) * 100);
 
-    // Return usage (users who ran a second report within 7 days)
-    const searchWithUserId = events.filter(
-      (e) => e.eventType === "search_submitted" && e.userId
-    );
-    const timestampsByUser = new Map<string, number[]>();
-    for (const e of searchWithUserId) {
-      const uid = e.userId!;
-      const list = timestampsByUser.get(uid) ?? [];
+    // Return usage: sessions that did a 2nd search within 7 days (all search_submitted events, grouped by sessionId)
+    const searchEvents = events.filter((e) => e.eventType === "search_submitted");
+    const timestampsBySession = new Map<string, number[]>();
+    for (const e of searchEvents) {
+      const list = timestampsBySession.get(e.sessionId) ?? [];
       list.push(e.timestamp);
-      timestampsByUser.set(uid, list);
+      timestampsBySession.set(e.sessionId, list);
     }
-    let usersWithSecondWithin7Days = 0;
-    for (const [, timestamps] of timestampsByUser) {
+    let sessionsWithSecondWithin7Days = 0;
+    for (const [, timestamps] of timestampsBySession) {
       const sorted = [...timestamps].sort((a, b) => a - b);
       if (sorted.length >= 2 && sorted[1] - sorted[0] <= SEVEN_DAYS_MS) {
-        usersWithSecondWithin7Days += 1;
+        sessionsWithSecondWithin7Days += 1;
       }
     }
-    const totalUsersWithOneSearch = timestampsByUser.size;
+    const totalSessionsWithOneSearch = timestampsBySession.size;
     const returnUsageRate =
-      totalUsersWithOneSearch === 0
+      totalSessionsWithOneSearch === 0
         ? 0
-        : Math.round((usersWithSecondWithin7Days / totalUsersWithOneSearch) * 1000) / 10;
+        : Math.round((sessionsWithSecondWithin7Days / totalSessionsWithOneSearch) * 1000) / 10;
 
     return {
       completionRate,
@@ -491,8 +487,8 @@ export const getKPIDashboard = query({
       defensibilityAverage,
       defensibilityCount,
       returnUsageRate,
-      totalUsersWithOneSearch,
-      usersWithSecondWithin7Days,
+      totalSessionsWithOneSearch,
+      sessionsWithSecondWithin7Days,
       usefulnessAverage,
       easeOfUseAverage,
       relevanceAverage,

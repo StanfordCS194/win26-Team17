@@ -34,6 +34,13 @@ const KPIDashboard = () => {
           )}
         </header>
 
+        <div className="bg-muted/50 rounded-lg border border-border px-4 py-3 text-sm text-muted-foreground">
+          <p className="font-medium text-foreground mb-1">About this data</p>
+          <p>
+            All metrics are computed from analytics events and feedback stored in the database (full dataset, no time window). Low numbers (e.g. &quot;Total searches: 1&quot;, &quot;Sessions with 1+ search: 1&quot;) mean there have been few sessions so far—typical for a new deployment or internal testing. Completion rate, time to insight, evidence engagement, and Return usage are all session-based: we count unique sessions (e.g. sessions with at least one search, sessions that viewed a dashboard, sessions that did a second search within 7 days). As more people use the app, the dashboard will reflect the larger sample.
+          </p>
+        </div>
+
         <section className="bg-card rounded-lg border border-border p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-foreground mb-4">
             Report Completion Rate
@@ -183,16 +190,16 @@ const KPIDashboard = () => {
           </h2>
           <ul className="space-y-2 text-sm">
             <li>
-              <span className="text-muted-foreground">Return rate (2nd report within 7 days): </span>
+              <span className="text-muted-foreground">Return rate (2nd search within 7 days): </span>
               <span className="font-medium">{data.returnUsageRate}%</span>
             </li>
             <li>
-              <span className="text-muted-foreground">Users with 1+ search: </span>
-              <span className="font-medium">{data.totalUsersWithOneSearch}</span>
+              <span className="text-muted-foreground">Sessions with 1+ search: </span>
+              <span className="font-medium">{data.totalSessionsWithOneSearch}</span>
             </li>
             <li>
-              <span className="text-muted-foreground">Users with 2nd search within 7 days: </span>
-              <span className="font-medium">{data.usersWithSecondWithin7Days}</span>
+              <span className="text-muted-foreground">Sessions with 2nd search within 7 days: </span>
+              <span className="font-medium">{data.sessionsWithSecondWithin7Days}</span>
             </li>
           </ul>
         </section>
