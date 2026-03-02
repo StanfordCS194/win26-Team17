@@ -25,6 +25,21 @@ const metrics: { key: keyof Omit<ConfidenceType, "overall">; label: string }[] =
 ];
 
 const ConfidenceIndicator = ({ confidence }: ConfidenceIndicatorProps) => {
+  if (confidence == null) {
+    return (
+      <div className="bg-card rounded-xl border border-border p-5">
+        <div className="flex items-center gap-2 mb-2">
+          <ShieldCheck className="w-5 h-5 text-muted-foreground" />
+          <h3 className="text-lg font-semibold text-foreground">Data Confidence</h3>
+          <span className="ml-auto text-lg font-medium text-muted-foreground">N/A</span>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Confidence is not available for this report. Run a new analysis to see coverage, agreement, and source diversity.
+        </p>
+      </div>
+    );
+  }
+
   const pct = Math.round(confidence.overall * 100);
 
   return (
