@@ -9,8 +9,15 @@ import InsightCard from "./InsightCard";
 import AspectScoreCard from "./AspectScore";
 import ConfidenceIndicator from "./ConfidenceIndicator";
 import IssueRadar from "./IssueRadar";
-import { ArrowLeft, Calendar, Database, FileText, RefreshCw, Share2, Check } from "lucide-react";
+import { ArrowLeft, Calendar, Database, FileText, RefreshCw, Share2, Check, ChevronDown, Link, FileDown, Table } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { exportReportToPdf, exportReportToExcel } from "@/lib/reportExport";
 
 interface DashboardProps {
   report: ProductReport;
@@ -71,14 +78,13 @@ const Dashboard = ({ report, reportId, onBack, onRefresh, isRefreshing }: Dashbo
     setFeedbackSubmitted(true);
   };
 
-  const handleShare = async () => {
+  const handleCopyLink = async () => {
     const url = `${window.location.origin}?product=${encodeURIComponent(report.productName)}`;
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Fallback for older browsers
       const textArea = document.createElement("textarea");
       textArea.value = url;
       document.body.appendChild(textArea);
@@ -88,6 +94,14 @@ const Dashboard = ({ report, reportId, onBack, onRefresh, isRefreshing }: Dashbo
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
+  };
+
+  const handleDownloadPdf = () => {
+    exportReportToPdf(report);
+  };
+
+  const handleExportExcel = () => {
+    exportReportToExcel(report);
   };
 
   return (
@@ -105,23 +119,41 @@ const Dashboard = ({ report, reportId, onBack, onRefresh, isRefreshing }: Dashbo
           </Button>
 
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={handleShare}
-              className="text-muted-foreground"
-            >
-              {copied ? (
-                <>
-                  <Check className="w-4 h-4 mr-2 text-green-600" />
-                  Copied!
-                </>
-              ) : (
-                <>
-                  <Share2 className="w-4 h-4 mr-2" />
-                  Share
-                </>
-              )}
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="text-muted-foreground"
+                >
+                  {copied ? (
+                    <>
+                      <Check className="w-4 h-4 mr-2 text-green-600" />
+                      Copied!
+                    </>
+                  ) : (
+                    <>
+                      <Share2 className="w-4 h-4 mr-2" />
+                      Share
+                      <ChevronDown className="w-4 h-4 ml-2" />
+                    </>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={handleCopyLink}>
+                  <Link className="w-4 h-4 mr-2" />
+                  Copy link
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleDownloadPdf}>
+                  <FileDown className="w-4 h-4 mr-2" />
+                  Download PDF
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportExcel}>
+                  <Table className="w-4 h-4 mr-2" />
+                  Export to Excel
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             {onRefresh && (
               <Button
