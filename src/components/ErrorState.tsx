@@ -18,6 +18,15 @@ function categorizeError(error: string | null): {
 } {
   const errorLower = (error || "").toLowerCase();
 
+  if (errorLower.includes("quota")) {
+    return {
+      icon: <Clock className="w-12 h-12 text-amber-500" />,
+      title: "Daily API Limit Reached",
+      description: "PulseCheck has reached its daily analysis limit. Please try again tomorrow.",
+      canRetry: false,
+    };
+  }
+
   if (errorLower.includes("rate limit") || errorLower.includes("429")) {
     return {
       icon: <Clock className="w-12 h-12 text-amber-500" />,

@@ -19,10 +19,12 @@ const Index = () => {
   const [reportId, setReportId] = useState<Id<"productReports"> | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [sessionSearches, setSessionSearches] = useState<string[]>(getSessionSearches);
 
   const analyzeProduct = useAction(api.reports.analyzeProduct);
+  const validateSoftwareProduct = useAction(api.reports.validateSoftwareProduct);
   const recordEvent = useMutation(api.analytics.recordEvent);
 
   // Check for product in URL on mount
@@ -92,11 +94,28 @@ const Index = () => {
   }, [report, view]);
 
   const handleSearch = async (query: string) => {
+    setError(null);
+    setValidationError(null);
+    setIsAnalyzing(true);
+
+    // Option 1: LLM validation — check if the query is a software product
+    try {
+      const validation = await validateSoftwareProduct({ productName: query });
+      if (!validation.isSoftware) {
+        setValidationError(
+          `"${query}" doesn't appear to be a software product. Try searching for a specific app, tool, or platform.`
+        );
+        setIsAnalyzing(false);
+        return;
+      }
+    } catch (err) {
+      console.error("Validation error:", err);
+      // If validation errors for any reason, fail open and let the pipeline run
+    }
+
     setSearchQuery(query);
     setSessionSearches(addSessionSearch(query));
-    setError(null);
     setView("loading");
-    setIsAnalyzing(true);
 
     recordEvent({
       eventType: "search_submitted",
@@ -122,6 +141,7 @@ const Index = () => {
     setSearchQuery("");
     setReportId(null);
     setError(null);
+    setValidationError(null);
   }, []);
 
   // Escape key to go back
@@ -197,7 +217,7 @@ const Index = () => {
       <Header />
 
       {view === "search" && (
-        <SearchHero onSearch={handleSearch} isLoading={isAnalyzing} sessionSearches={sessionSearches} />
+        <SearchHero onSearch={handleSearch} isLoading={isAnalyzing} sessionSearches={sessionSearches} validationError={validationError} />
       )}
 
       {view === "loading" && (
