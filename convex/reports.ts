@@ -2,6 +2,9 @@ import { query, mutation, action } from "./_generated/server";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
+import { generateObject } from "ai";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { z } from "zod";
 
 // ============================================================================
 // Validation
@@ -195,6 +198,30 @@ export const createPendingReport = mutation({
 // ============================================================================
 
 // Action that creates report and triggers pipeline
+export const validateSoftwareProduct = action({
+  args: { productName: v.string() },
+  handler: async (ctx, args): Promise<{ isSoftware: boolean; reason: string }> => {
+    const apiKey = process.env.GEMINI_VALIDATION_KEY ?? process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      // If key is missing, fail open so the pipeline still runs
+      return { isSoftware: true, reason: "Validation skipped: no API key" };
+    }
+
+    const google = createGoogleGenerativeAI({ apiKey });
+
+    const { object } = await generateObject({
+      model: google("gemini-2.5-flash"),
+      schema: z.object({
+        isSoftware: z.boolean(),
+        reason: z.string().describe("One sentence explanation of the decision."),
+      }),
+      prompt: `A user typed "${args.productName}" into a software product analytics tool. Is this specifically a software product, app, developer tool, framework, library, or technology platform? Answer true if a knowledgeable person would recognize this as a software product. Answer false if it is primarily a common word, food, animal, place, or physical object. If you are not confident it is a software product, answer false.`,
+    });
+
+    return object;
+  },
+});
+
 export const analyzeProduct = action({
   args: {
     productName: v.string(),

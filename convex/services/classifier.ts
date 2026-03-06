@@ -149,6 +149,7 @@ async function classifyBatch(
         {
           schema: mentionClassificationSchema,
           prompt: `Classify this user mention about "${productName}":\n\n"${mention.text}"`,
+          maxRetries: 0,
         }
       );
       return {
@@ -159,13 +160,24 @@ async function classifyBatch(
   );
 
   const classified: ClassifiedMention[] = [];
+  let quotaExceeded = false;
+
   for (const result of results) {
     if (result.status === "fulfilled") {
       classified.push(result.value);
     } else {
+      const msg = (result.reason?.message ?? "").toLowerCase();
+      if (msg.includes("quota") || msg.includes("rate limit") || msg.includes("resource_exhausted") || msg.includes("429")) {
+        quotaExceeded = true;
+      }
       console.warn("Failed to classify mention:", result.reason);
     }
   }
+
+  if (quotaExceeded && classified.length === 0) {
+    throw new Error("Gemini API quota exceeded. Daily limit reached — please try again tomorrow.");
+  }
+
   return classified;
 }
 
