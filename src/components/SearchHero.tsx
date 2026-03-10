@@ -7,14 +7,15 @@ interface SearchHeroProps {
   onSearch: (query: string) => void;
   isLoading: boolean;
   sessionSearches: string[];
+  validationError?: string | null;
 }
 
 const MIN_LENGTH = 2;
 const MAX_LENGTH = 100;
 
-const SearchHero = ({ onSearch, isLoading, sessionSearches }: SearchHeroProps) => {
+const SearchHero = ({ onSearch, isLoading, sessionSearches, validationError }: SearchHeroProps) => {
   const [query, setQuery] = useState("");
-  const [validationError, setValidationError] = useState<string | null>(null);
+  const [inputError, setInputError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Auto-focus search input on mount
@@ -35,18 +36,18 @@ const SearchHero = ({ onSearch, isLoading, sessionSearches }: SearchHeroProps) =
 
   const handleQueryChange = (value: string) => {
     setQuery(value);
-    setValidationError(validateQuery(value));
+    setInputError(validateQuery(value));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const error = validateQuery(query);
     if (error) {
-      setValidationError(error);
+      setInputError(error);
       return;
     }
     if (query.trim()) {
-      setValidationError(null);
+      setInputError(null);
       onSearch(query.trim());
     }
   };
@@ -94,23 +95,23 @@ const SearchHero = ({ onSearch, isLoading, sessionSearches }: SearchHeroProps) =
               value={query}
               onChange={(e) => handleQueryChange(e.target.value)}
               className={`pl-12 h-14 text-base bg-card shadow-md focus:shadow-lg transition-all ${
-                validationError
+                inputError
                   ? "border-red-500 focus:border-red-500"
                   : "border-border focus:border-accent"
               }`}
               disabled={isLoading}
               maxLength={MAX_LENGTH + 10}
             />
-            {validationError && (
+            {inputError && (
               <p className="absolute -bottom-6 left-0 text-sm text-red-500">
-                {validationError}
+                {inputError}
               </p>
             )}
           </div>
           <Button
             type="submit"
             size="lg"
-            disabled={!query.trim() || isLoading || !!validationError}
+            disabled={!query.trim() || isLoading || !!inputError}
             className="h-14 px-8 gradient-accent text-accent-foreground font-semibold shadow-glow hover:opacity-90 transition-opacity"
           >
             {isLoading ? (
@@ -126,6 +127,15 @@ const SearchHero = ({ onSearch, isLoading, sessionSearches }: SearchHeroProps) =
             )}
           </Button>
         </form>
+
+        {/* LLM Software Validation Error */}
+        {validationError && (
+          <div className="max-w-xl mx-auto mb-6 px-4 py-4 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 text-center">
+            {validationError.split(". ").map((sentence, i) => (
+              <p key={i}>{sentence}{i < validationError.split(". ").length - 1 ? "." : ""}</p>
+            ))}
+          </div>
+        )}
 
         {/* Session Recent Searches */}
         {sessionSearches.length > 0 && (
