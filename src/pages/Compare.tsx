@@ -8,7 +8,7 @@ import { CompareCharts } from "@/components/CompareCharts";
 import { ProductReport } from "@/types/report";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, ArrowRightLeft, Loader2 } from "lucide-react";
+import { Search, ArrowRightLeft, Loader2, RefreshCw } from "lucide-react";
 import { Link } from "react-router-dom";
 
 const MIN_LENGTH = 2;
@@ -76,13 +76,35 @@ const Compare = () => {
       setStatus("loading");
       try {
         await analyzeProduct({ productName: trimmed });
-        // "ready" is set in useEffect when report.status === "complete"
       } catch (err) {
         setError(err instanceof Error ? err.message : "Analysis failed");
         setStatus("error");
       }
     },
     [analyzeProduct]
+  );
+
+  const runRefresh = useCallback(
+    async (area: 1 | 2) => {
+      const query = area === 1 ? area1Query : area2Query;
+      const setStatus = area === 1 ? setArea1Status : setArea2Status;
+      const setError = area === 1 ? setArea1Error : setArea2Error;
+      const setQuery = area === 1 ? setArea1Query : setArea2Query;
+      const trimmed = query.trim();
+      if (!trimmed) return;
+      setError(null);
+      setQuery("");
+      setStatus("loading");
+      try {
+        await analyzeProduct({ productName: trimmed, forceRefresh: true });
+        setQuery(trimmed);
+      } catch (err) {
+        setQuery(trimmed);
+        setError(err instanceof Error ? err.message : "Refresh failed");
+        setStatus("error");
+      }
+    },
+    [analyzeProduct, area1Query, area2Query]
   );
 
   // Sync status from Convex reports
@@ -164,6 +186,16 @@ const Compare = () => {
                     <Search className="w-4 h-4" />
                   )}
                 </Button>
+                {report1Complete && (
+                  <Button
+                    variant="outline"
+                    onClick={() => runRefresh(1)}
+                    disabled={area1Status === "loading"}
+                    title="Re-analyze with fresh data"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${area1Status === "loading" ? "animate-spin" : ""}`} />
+                  </Button>
+                )}
               </div>
               {sessionSearches.length > 0 && (
                 <div className="flex flex-wrap gap-2">
@@ -213,6 +245,16 @@ const Compare = () => {
                     <Search className="w-4 h-4" />
                   )}
                 </Button>
+                {report2Complete && (
+                  <Button
+                    variant="outline"
+                    onClick={() => runRefresh(2)}
+                    disabled={area2Status === "loading"}
+                    title="Re-analyze with fresh data"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${area2Status === "loading" ? "animate-spin" : ""}`} />
+                  </Button>
+                )}
               </div>
               {sessionSearches.length > 0 && (
                 <div className="flex flex-wrap gap-2">
