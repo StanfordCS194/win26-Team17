@@ -178,8 +178,13 @@ export const createPendingReport = mutation({
     );
 
     if (existingReport) {
-      // If complete, return it; if in progress, return the ID
-      return { reportId: existingReport._id, existing: true };
+      // Errored reports are not cached — delete and re-run the pipeline
+      if (existingReport.status === "error") {
+        await ctx.db.delete(existingReport._id);
+      } else {
+        // Complete or in-progress — return cached
+        return { reportId: existingReport._id, existing: true };
+      }
     }
 
     // Create new pending report
