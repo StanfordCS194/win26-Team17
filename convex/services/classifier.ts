@@ -8,7 +8,7 @@
 import { Agent } from "@convex-dev/agent";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { z } from "zod";
-import { components } from "../_generated/api";
+import { internal, components } from "../_generated/api";
 import type { ActionCtx } from "../_generated/server";
 import type { ClassifiedMention, MentionClassification } from "./scoring";
 import { ASPECTS } from "./scoring";
@@ -30,6 +30,12 @@ export interface RawMention {
   date: string;
   url: string;
   source: SourceName;
+}
+
+export interface ClassifyMentionsResult {
+  mentions: ClassifiedMention[];
+  cacheHits: number;
+  cacheMisses: number;
 }
 
 // ============================================================================
@@ -165,6 +171,25 @@ function withDerivedSentimentScore(
           ? 25
           : 50,
   };
+}
+
+function normalizeCacheText(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function hashText(text: string): string {
+  let hash = 2166136261;
+
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return `${(hash >>> 0).toString(16).padStart(8, "0")}:${text.length.toString(36)}`;
+}
+
+function getMentionCacheKey(mention: RawMention): string {
+  return hashText(normalizeCacheText(mention.text));
 }
 
 /**
@@ -327,18 +352,85 @@ export async function classifyMentions(
   ctx: ActionCtx,
   productName: string,
   mentions: RawMention[]
-): Promise<ClassifiedMention[]> {
-  if (mentions.length === 0) return [];
-
-  const allClassified: ClassifiedMention[] = [];
-
-  for (let i = 0; i < mentions.length; i += CLASSIFY_BATCH_SIZE) {
-    const batch = mentions.slice(i, i + CLASSIFY_BATCH_SIZE);
-    const classified = await classifyBatch(ctx, productName, batch);
-    allClassified.push(...classified);
+): Promise<ClassifyMentionsResult> {
+  if (mentions.length === 0) {
+    return { mentions: [], cacheHits: 0, cacheMisses: 0 };
   }
 
-  return allClassified;
+  const normalizedProductName = productName.trim().toLowerCase();
+  const cacheKeys = mentions.map((mention) => getMentionCacheKey(mention));
+  const cachedEntries = await Promise.all(
+    cacheKeys.map((textHash) =>
+      ctx.runQuery(internal.classificationCache.getCachedClassification, {
+        productName: normalizedProductName,
+        textHash,
+      })
+    )
+  );
+
+  const classifiedByIndex = new Array<ClassifiedMention | undefined>(mentions.length);
+  const uncachedMentions: RawMention[] = [];
+  const uncachedIndices: number[] = [];
+
+  for (let index = 0; index < mentions.length; index += 1) {
+    const cached = cachedEntries[index];
+    if (cached) {
+      classifiedByIndex[index] = {
+        ...mentions[index],
+        classification: cached.classification as MentionClassification,
+      };
+      continue;
+    }
+
+    uncachedMentions.push(mentions[index]);
+    uncachedIndices.push(index);
+  }
+
+  const newlyClassified: ClassifiedMention[] = [];
+  for (let index = 0; index < uncachedMentions.length; index += CLASSIFY_BATCH_SIZE) {
+    const batch = uncachedMentions.slice(index, index + CLASSIFY_BATCH_SIZE);
+    const classified = await classifyBatch(ctx, productName, batch);
+    newlyClassified.push(...classified);
+  }
+
+  if (newlyClassified.length > 0) {
+    await ctx.runMutation(internal.classificationCache.upsertCachedClassifications, {
+      entries: newlyClassified.map((mention) => ({
+        productName: normalizedProductName,
+        textHash: getMentionCacheKey(mention),
+        classification: mention.classification,
+      })),
+    });
+  }
+
+  const newlyClassifiedByKey = new Map(
+    newlyClassified.map((mention) => [getMentionCacheKey(mention), mention])
+  );
+
+  for (const uncachedIndex of uncachedIndices) {
+    const classified = newlyClassifiedByKey.get(
+      getMentionCacheKey(mentions[uncachedIndex])
+    );
+    if (classified) {
+      classifiedByIndex[uncachedIndex] = classified;
+    }
+  }
+
+  const allClassified = classifiedByIndex.filter(
+    (mention): mention is ClassifiedMention => mention !== undefined
+  );
+  const cacheHits = mentions.length - uncachedMentions.length;
+  const cacheMisses = uncachedMentions.length;
+
+  console.log(
+    `[classifier:${productName}] cache hits=${cacheHits}, misses=${cacheMisses}`
+  );
+
+  return {
+    mentions: allClassified,
+    cacheHits,
+    cacheMisses,
+  };
 }
 
 /**

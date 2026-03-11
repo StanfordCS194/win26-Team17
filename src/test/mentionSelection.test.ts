@@ -20,7 +20,7 @@ describe("selectMentionsForClassification", () => {
   it("caps the total number of mentions", () => {
     const mentions = Array.from({ length: 100 }, (_, index) => mention({}, index));
 
-    const selected = selectMentionsForClassification(mentions, 20);
+    const selected = selectMentionsForClassification("Slack", mentions, 20);
 
     expect(selected).toHaveLength(20);
   });
@@ -41,7 +41,7 @@ describe("selectMentionsForClassification", () => {
       ),
     ];
 
-    const selected = selectMentionsForClassification(mentions, 8);
+    const selected = selectMentionsForClassification("Slack", mentions, 8);
     const selectedSources = new Set(selected.map((item) => item.source));
 
     expect(selectedSources).toEqual(
@@ -59,11 +59,67 @@ describe("selectMentionsForClassification", () => {
       ),
     ];
 
-    const selected = selectMentionsForClassification(mentions, 8);
+    const selected = selectMentionsForClassification("Slack", mentions, 8);
     const repeatedAuthorCount = selected.filter(
       (item) => item.author === "repeat-author"
     ).length;
 
     expect(repeatedAuthorCount).toBeLessThanOrEqual(2);
+  });
+
+  it("prefers newer mentions within a source when sampling", () => {
+    const mentions: RawMention[] = [
+      mention(
+        {
+          source: "reddit",
+          author: "older",
+          date: "2021-01-01T10:00:00Z",
+          text: "Older mention ".repeat(40),
+        },
+        1
+      ),
+      mention(
+        {
+          source: "reddit",
+          author: "newer",
+          date: "2025-01-01T10:00:00Z",
+          text: "Newer mention ".repeat(10),
+        },
+        2
+      ),
+    ];
+
+    const selected = selectMentionsForClassification("Slack", mentions, 1);
+
+    expect(selected).toHaveLength(1);
+    expect(selected[0].author).toBe("newer");
+  });
+
+  it("prefers mentions that explicitly name the product", () => {
+    const mentions: RawMention[] = [
+      mention(
+        {
+          source: "reddit",
+          author: "generic",
+          date: "2025-01-02T10:00:00Z",
+          text: "This tool is decent once you learn the workflow.".repeat(6),
+        },
+        1
+      ),
+      mention(
+        {
+          source: "reddit",
+          author: "specific",
+          date: "2024-01-01T10:00:00Z",
+          text: "Slack makes async team communication much easier for us.".repeat(4),
+        },
+        2
+      ),
+    ];
+
+    const selected = selectMentionsForClassification("Slack", mentions, 1);
+
+    expect(selected).toHaveLength(1);
+    expect(selected[0].author).toBe("specific");
   });
 });

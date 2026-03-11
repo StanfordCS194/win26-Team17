@@ -37,6 +37,24 @@ const confidenceValidator = v.object({
   sourceDiversity: v.number(),
 });
 
+const mentionClassificationValidator = v.object({
+  sentiment: v.union(
+    v.literal("positive"),
+    v.literal("neutral"),
+    v.literal("negative"),
+  ),
+  sentimentScore: v.number(),
+  aspects: v.array(
+    v.union(
+      v.literal("Price"),
+      v.literal("Quality"),
+      v.literal("Durability"),
+      v.literal("Usability"),
+    )
+  ),
+  relevant: v.boolean(),
+});
+
 export default defineSchema({
   productReports: defineTable({
     productName: v.string(),
@@ -99,4 +117,10 @@ export default defineSchema({
   })
     .index("by_reportId", ["reportId"])
     .index("by_sessionId", ["sessionId"]),
+  mentionClassificationCache: defineTable({
+    productName: v.string(),
+    textHash: v.string(),
+    classification: mentionClassificationValidator,
+    updatedAt: v.number(),
+  }).index("by_product_textHash", ["productName", "textHash"]),
 });
