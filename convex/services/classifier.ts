@@ -2,7 +2,7 @@
  * Classifier Module
  *
  * Uses @convex-dev/agent for per-mention sentiment classification
- * and report synthesis. Model-agnostic via the Vercel AI SDK.
+ * and optional LLM synthesis. Model-agnostic via the Vercel AI SDK.
  */
 
 import { Agent } from "@convex-dev/agent";
@@ -10,8 +10,13 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { z } from "zod";
 import { components } from "../_generated/api";
 import type { ActionCtx } from "../_generated/server";
-import type { Aspect, ClassifiedMention, MentionClassification } from "./scoring";
+import type { ClassifiedMention, MentionClassification } from "./scoring";
 import { ASPECTS } from "./scoring";
+import {
+  synthesizeReportDeterministically,
+  type ReportInsight,
+  type SynthesizedReport,
+} from "./reportSynthesis";
 
 // ============================================================================
 // Types
@@ -31,13 +36,8 @@ export interface RawMention {
 // Schemas
 // ============================================================================
 
-const mentionClassificationSchema = z.object({
+const llmMentionClassificationSchema = z.object({
   sentiment: z.enum(["positive", "neutral", "negative"]),
-  sentimentScore: z
-    .number()
-    .min(0)
-    .max(100)
-    .describe("0 = extremely negative, 50 = neutral, 100 = extremely positive"),
   aspects: z
     .array(z.enum(ASPECTS))
     .describe(
@@ -48,6 +48,10 @@ const mentionClassificationSchema = z.object({
     .describe(
       "Whether this mention is genuinely about the product, not just mentioning the name in passing."
     ),
+});
+
+const mentionBatchClassificationSchema = z.object({
+  classifications: z.array(llmMentionClassificationSchema),
 });
 
 const synthesisSchema = z.object({
@@ -100,9 +104,8 @@ const classifierAgent = new Agent(components.agent, {
   instructions: `You are a product feedback classifier. For each user mention about a product, determine:
 
 1. Sentiment: positive, neutral, or negative
-2. Sentiment score: 0-100 (0 = extremely negative, 50 = neutral, 100 = extremely positive)
-3. Relevant aspects: which of [Price, Quality, Durability, Usability] the mention discusses
-4. Relevance: whether the mention is genuinely about the product
+2. Relevant aspects: which of [Price, Quality, Durability, Usability] the mention discusses
+3. Relevance: whether the mention is genuinely about the product
 
 Be precise. A mention can discuss zero or multiple aspects. Only mark aspects that are clearly discussed, not merely implied.
 
@@ -129,34 +132,81 @@ Reference specific mention indices that support each theme. Do not re-analyze se
 // Classification
 // ============================================================================
 
-const CLASSIFY_BATCH_SIZE = 10;
+const CLASSIFY_BATCH_SIZE = 24;
+const CLASSIFY_TEXT_LIMIT = 100;
+const SYNTHESIS_TEXT_LIMIT = 120;
+const SHOULD_USE_LLM_SYNTHESIS =
+  process.env.PIPELINE_USE_LLM_SYNTHESIS === "true";
+const NO_HISTORY_AGENT_OPTIONS = {
+  storageOptions: {
+    saveMessages: "none" as const,
+  },
+};
+
+function isQuotaError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("quota exceeded") ||
+    normalized.includes("resource_exhausted") ||
+    normalized.includes("429")
+  );
+}
+
+function withDerivedSentimentScore(
+  classification: Omit<MentionClassification, "sentimentScore">
+): MentionClassification {
+  return {
+    ...classification,
+    sentimentScore:
+      classification.sentiment === "positive"
+        ? 75
+        : classification.sentiment === "negative"
+          ? 25
+          : 50,
+  };
+}
 
 /**
- * Classify a batch of mentions concurrently.
- * Returns classified mentions. Individual failures are logged and skipped.
+ * Classify one mention in isolation with no saved thread history.
  */
-async function classifyBatch(
+async function classifySingleMention(
   ctx: ActionCtx,
   productName: string,
-  mentions: RawMention[],
+  mention: RawMention,
   threadId: string
+): Promise<ClassifiedMention> {
+  const { object } = await classifierAgent.generateObject(
+    ctx,
+    { threadId },
+    {
+      schema: llmMentionClassificationSchema,
+      prompt: `Classify this user mention about "${productName}":\n\n"${mention.text.slice(0, CLASSIFY_TEXT_LIMIT)}"`,
+    },
+    NO_HISTORY_AGENT_OPTIONS
+  );
+
+  return {
+    ...mention,
+    classification: withDerivedSentimentScore(
+      object as Omit<MentionClassification, "sentimentScore">
+    ),
+  };
+}
+
+/**
+ * Fallback path if a batched classification response is malformed.
+ */
+async function classifyIndividually(
+  ctx: ActionCtx,
+  productName: string,
+  mentions: RawMention[]
 ): Promise<ClassifiedMention[]> {
+  const { threadId } = await classifierAgent.createThread(ctx, {});
   const results = await Promise.allSettled(
-    mentions.map(async (mention) => {
-      const { object } = await classifierAgent.generateObject(
-        ctx,
-        { threadId },
-        {
-          schema: mentionClassificationSchema,
-          prompt: `Classify this user mention about "${productName}":\n\n"${mention.text}"`,
-          maxRetries: 0,
-        }
-      );
-      return {
-        ...mention,
-        classification: object as MentionClassification,
-      };
-    })
+    mentions.map((mention) =>
+      classifySingleMention(ctx, productName, mention, threadId)
+    )
   );
 
   const classified: ClassifiedMention[] = [];
@@ -182,8 +232,96 @@ async function classifyBatch(
 }
 
 /**
+ * Classify a batch of mentions in a single LLM call.
+ * Falls back to individual classification if the batch response is malformed.
+ */
+async function classifyBatch(
+  ctx: ActionCtx,
+  productName: string,
+  mentions: RawMention[]
+): Promise<ClassifiedMention[]> {
+  if (mentions.length === 0) return [];
+
+  const { threadId } = await classifierAgent.createThread(ctx, {});
+  const prompt = `Classify each numbered user mention about "${productName}".
+
+Return exactly one classification for each mention, in the same order.
+
+Mentions:
+${mentions
+  .map(
+    (mention, index) =>
+      `${index + 1}. ${JSON.stringify(mention.text.slice(0, CLASSIFY_TEXT_LIMIT))}`
+  )
+  .join("\n\n")}`;
+
+  try {
+    const { object } = await classifierAgent.generateObject(
+      ctx,
+      { threadId },
+      {
+        schema: mentionBatchClassificationSchema,
+        prompt,
+      },
+      NO_HISTORY_AGENT_OPTIONS
+    );
+
+    if (object.classifications.length !== mentions.length) {
+      if (mentions.length === 1) {
+        console.warn(
+          `Batch classification returned ${object.classifications.length} results for 1 mention; falling back to single classification`
+        );
+        return await classifyIndividually(ctx, productName, mentions);
+      }
+
+      const midpoint = Math.ceil(mentions.length / 2);
+      console.warn(
+        `Batch classification returned ${object.classifications.length} results for ${mentions.length} mentions; retrying in smaller batches`
+      );
+      const [left, right] = await Promise.all([
+        classifyBatch(ctx, productName, mentions.slice(0, midpoint)),
+        classifyBatch(ctx, productName, mentions.slice(midpoint)),
+      ]);
+      return [...left, ...right];
+    }
+
+    return mentions.map((mention, index) => ({
+      ...mention,
+      classification: withDerivedSentimentScore(
+        object.classifications[index] as Omit<
+          MentionClassification,
+          "sentimentScore"
+        >
+      ),
+    }));
+  } catch (error) {
+    if (isQuotaError(error)) {
+      throw error;
+    }
+
+    if (mentions.length === 1) {
+      console.warn(
+        "Batch classification failed for a single mention; falling back to individual classification:",
+        error
+      );
+      return await classifyIndividually(ctx, productName, mentions);
+    }
+
+    const midpoint = Math.ceil(mentions.length / 2);
+    console.warn(
+      `Batch classification failed for ${mentions.length} mentions; retrying in smaller batches:`,
+      error
+    );
+    const [left, right] = await Promise.all([
+      classifyBatch(ctx, productName, mentions.slice(0, midpoint)),
+      classifyBatch(ctx, productName, mentions.slice(midpoint)),
+    ]);
+    return [...left, ...right];
+  }
+}
+
+/**
  * Classify all mentions in batches.
- * Creates a single thread for the classification run.
  */
 export async function classifyMentions(
   ctx: ActionCtx,
@@ -192,39 +330,15 @@ export async function classifyMentions(
 ): Promise<ClassifiedMention[]> {
   if (mentions.length === 0) return [];
 
-  const { threadId } = await classifierAgent.createThread(ctx, {});
   const allClassified: ClassifiedMention[] = [];
 
   for (let i = 0; i < mentions.length; i += CLASSIFY_BATCH_SIZE) {
     const batch = mentions.slice(i, i + CLASSIFY_BATCH_SIZE);
-    const classified = await classifyBatch(ctx, productName, batch, threadId);
+    const classified = await classifyBatch(ctx, productName, batch);
     allClassified.push(...classified);
   }
 
   return allClassified;
-}
-
-// ============================================================================
-// Synthesis
-// ============================================================================
-
-interface ReportInsight {
-  title: string;
-  description: string;
-  frequency: number;
-  quotes: Array<{
-    text: string;
-    source: SourceName;
-    author: string;
-    date: string;
-    url: string;
-  }>;
-}
-
-export interface SynthesizedReport {
-  summary: string;
-  strengths: ReportInsight[];
-  issues: ReportInsight[];
 }
 
 /**
@@ -240,17 +354,21 @@ export async function synthesizeReport(
 ): Promise<SynthesizedReport> {
   if (mentions.length === 0) {
     return {
+      mode: "deterministic",
       summary: `No user feedback found for "${productName}".`,
       strengths: [],
       issues: [],
     };
   }
 
-  const { threadId } = await synthesizerAgent.createThread(ctx, {});
+  if (!SHOULD_USE_LLM_SYNTHESIS) {
+    return synthesizeReportDeterministically(productName, mentions, scores);
+  }
 
-  const mentionSummaries = mentions.map((m, i) => ({
+  const { threadId } = await synthesizerAgent.createThread(ctx, {});
+  const mentionSummaries = mentions.slice(0, 20).map((m, i) => ({
     index: i,
-    text: m.text.slice(0, 300),
+    text: m.text.slice(0, SYNTHESIS_TEXT_LIMIT),
     sentiment: m.classification.sentiment,
     aspects: m.classification.aspects,
   }));
@@ -265,33 +383,43 @@ ${JSON.stringify(mentionSummaries, null, 2)}
 
 Identify 2-4 strengths (positive themes) and 2-4 issues (negative themes). Reference mention indices that support each theme.`;
 
-  const { object } = await synthesizerAgent.generateObject(
-    ctx,
-    { threadId },
-    { schema: synthesisSchema, prompt }
-  );
+  try {
+    const { object } = await synthesizerAgent.generateObject(
+      ctx,
+      { threadId },
+      { schema: synthesisSchema, prompt },
+      NO_HISTORY_AGENT_OPTIONS
+    );
 
-  const mapInsight = (
-    insight: { title: string; description: string; mentionIndices: number[] }
-  ): ReportInsight => ({
-    title: insight.title,
-    description: insight.description,
-    frequency: insight.mentionIndices.length,
-    quotes: insight.mentionIndices
-      .filter((idx) => idx >= 0 && idx < mentions.length)
-      .slice(0, 5)
-      .map((idx) => ({
-        text: mentions[idx].text,
-        source: mentions[idx].source,
-        author: mentions[idx].author,
-        date: mentions[idx].date,
-        url: mentions[idx].url,
-      })),
-  });
+    const mapInsight = (
+      insight: { title: string; description: string; mentionIndices: number[] }
+    ): ReportInsight => ({
+      title: insight.title,
+      description: insight.description,
+      frequency: insight.mentionIndices.length,
+      quotes: insight.mentionIndices
+        .filter((idx) => idx >= 0 && idx < mentionSummaries.length)
+        .slice(0, 5)
+        .map((idx) => ({
+          text: mentions[idx].text,
+          source: mentions[idx].source,
+          author: mentions[idx].author,
+          date: mentions[idx].date,
+          url: mentions[idx].url,
+        })),
+    });
 
-  return {
-    summary: object.summary,
-    strengths: object.strengths.map(mapInsight),
-    issues: object.issues.map(mapInsight),
-  };
+    return {
+      mode: "llm",
+      summary: object.summary,
+      strengths: object.strengths.map(mapInsight),
+      issues: object.issues.map(mapInsight),
+    };
+  } catch (error) {
+    console.warn(
+      "LLM synthesis failed; falling back to deterministic synthesis:",
+      error
+    );
+    return synthesizeReportDeterministically(productName, mentions, scores);
+  }
 }

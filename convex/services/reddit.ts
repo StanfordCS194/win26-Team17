@@ -536,6 +536,7 @@ export async function searchSoftwareProduct(
   const { postLimit = 25, commentsPerPost = 25, includeGenericSearch = true } = options;
   const allResults: RedditPostWithComments[] = [];
   const seenPostIds = new Set<string>();
+  let rateLimited = false;
 
   const addResults = (results: RedditPostWithComments[]) => {
     for (const result of results) {
@@ -545,52 +546,63 @@ export async function searchSoftwareProduct(
       }
     }
   };
+  const isRateLimitError = (error: unknown): boolean =>
+    error instanceof RedditApiError && error.statusCode === 429;
 
   const queries = generateSoftwareQueries(productName);
 
   // 1. Search product-specific subreddits first (highest signal)
   const productSubs = getProductSubreddits(productName);
   for (const subreddit of productSubs) {
-    if (allResults.length >= postLimit) break;
+    if (allResults.length >= postLimit || rateLimited) break;
     try {
       const results = await client.searchWithComments(productName, {
         subreddit,
-        postLimit: 10,
+        postLimit: Math.min(postLimit, 6),
         commentsPerPost,
       });
       addResults(results);
     } catch (error) {
       console.warn(`Failed to search r/${subreddit}:`, error);
+      if (isRateLimitError(error)) {
+        rateLimited = true;
+      }
     }
   }
 
   // 2. Search software-focused subreddits (broader net)
-  for (const subreddit of SOFTWARE_SUBREDDITS.slice(0, 6)) {
-    if (allResults.length >= postLimit) break;
+  for (const subreddit of SOFTWARE_SUBREDDITS.slice(0, 3)) {
+    if (allResults.length >= postLimit || rateLimited) break;
     try {
       const results = await client.searchWithComments(productName, {
         subreddit,
-        postLimit: 5,
+        postLimit: 3,
         commentsPerPost,
       });
       addResults(results);
     } catch (error) {
       console.warn(`Failed to search r/${subreddit}:`, error);
+      if (isRateLimitError(error)) {
+        rateLimited = true;
+      }
     }
   }
 
   // 3. Targeted queries across all of Reddit
-  if (allResults.length < postLimit && includeGenericSearch) {
-    for (const query of queries.slice(0, 4)) {
-      if (allResults.length >= postLimit) break;
+  if (allResults.length < postLimit && includeGenericSearch && !rateLimited) {
+    for (const query of queries.slice(0, 2)) {
+      if (allResults.length >= postLimit || rateLimited) break;
       try {
         const results = await client.searchWithComments(query, {
-          postLimit: 10,
+          postLimit: 4,
           commentsPerPost,
         });
         addResults(results);
       } catch (error) {
         console.warn(`Failed to search "${query}":`, error);
+        if (isRateLimitError(error)) {
+          rateLimited = true;
+        }
       }
     }
   }
