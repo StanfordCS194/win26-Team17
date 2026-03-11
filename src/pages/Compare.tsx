@@ -186,7 +186,7 @@ const Compare = () => {
                     <Search className="w-4 h-4" />
                   )}
                 </Button>
-                {report1Complete && (
+                {(report1Complete || area1Status === "error") && (
                   <Button
                     variant="outline"
                     onClick={() => runRefresh(1)}
@@ -245,7 +245,7 @@ const Compare = () => {
                     <Search className="w-4 h-4" />
                   )}
                 </Button>
-                {report2Complete && (
+                {(report2Complete || area2Status === "error") && (
                   <Button
                     variant="outline"
                     onClick={() => runRefresh(2)}
