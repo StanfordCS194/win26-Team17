@@ -373,7 +373,7 @@ export async function synthesizeReport(
     aspects: m.classification.aspects,
   }));
 
-  const prompt = `Analyze ${mentions.length} classified mentions about "${productName}".
+  const prompt = `Analyze ${mentionSummaries.length} classified mentions about "${productName}".
 
 Overall score: ${scores.overallScore}/100
 Aspect scores: ${scores.aspects.map((a) => `${a.name}: ${a.score}/100 (${a.mentions} mentions)`).join(", ")}
