@@ -119,6 +119,30 @@ describe("searchSoftwareProduct (Reddit)", () => {
     expect(results.length).toBeGreaterThan(0);
   });
 
+  it("should stop broad Reddit search after a rate limit error", async () => {
+    const searchCalls: string[] = [];
+    const { RedditApiError, searchSoftwareProduct } = await import("../../convex/services/reddit");
+
+    const mockClient: IRedditClient = {
+      searchPosts: vi.fn(),
+      fetchComments: vi.fn(),
+      searchWithComments: vi.fn().mockImplementation((_query, opts) => {
+        searchCalls.push(opts?.subreddit || "global");
+        if (opts?.subreddit === "Notion") {
+          return Promise.reject(new RedditApiError("Rate limited by Reddit", 429, true));
+        }
+        return Promise.resolve([
+          makeRedditResult("1", "Notion review app", "This software tool is great"),
+        ]);
+      }),
+    };
+
+    const results = await searchSoftwareProduct(mockClient, "Notion", { postLimit: 5 });
+
+    expect(results).toHaveLength(0);
+    expect(searchCalls).toEqual(["Notion"]);
+  });
+
   it("should filter out posts that do not mention the product", async () => {
     const mockClient: IRedditClient = {
       searchPosts: vi.fn(),

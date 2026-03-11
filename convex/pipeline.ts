@@ -25,7 +25,10 @@ import {
 import { deduplicateMentions } from "./services/dedup";
 import { classifyMentions, synthesizeReport } from "./services/classifier";
 import type { RawMention, SourceName } from "./services/classifier";
+import { selectMentionsForClassification } from "./services/mentionSelection";
 import { computeAllScores, ASPECTS } from "./services/scoring";
+
+const MAX_CLASSIFICATION_MENTIONS = 24;
 
 // ============================================================================
 // Helpers: Extract Raw Mentions from Each Source
@@ -305,78 +308,100 @@ export const generateReport = action({
 
       const rawMentions: RawMention[] = [];
       const activeSourceNames: SourceName[] = [];
-
-      // Reddit
-      try {
-        const reddit = new RedditClient({
-          cacheTtlMs: 60000,
-          requestDelayMs: 3000,
-          retryDelayMs: 30000,
-          maxRetries: 3,
-        });
-        const redditResults = await searchSoftwareProduct(reddit, productName, {
-          postLimit: 25,
-          commentsPerPost: 25,
-        });
-        const redditMentions = extractRedditMentions(redditResults);
-        rawMentions.push(...redditMentions);
-        if (redditMentions.length > 0) activeSourceNames.push("reddit");
-        console.log(`${tag} Reddit: ${redditResults.length} posts, ${redditMentions.length} mentions`);
-      } catch (error) {
-        console.warn(`${tag} Reddit fetch failed:`, error);
-      }
-
-      // HackerNews
-      try {
-        const hn = new HackerNewsClient();
-        const hnResults = await searchSoftwareProductHN(hn, productName, {
-          storyLimit: 10,
-          commentsPerStory: 20,
-        });
-        const hnMentions = extractHackerNewsMentions(hnResults);
-        rawMentions.push(...hnMentions);
-        if (hnMentions.length > 0) activeSourceNames.push("hackernews");
-        console.log(`${tag} HackerNews: ${hnResults.length} stories, ${hnMentions.length} mentions`);
-      } catch (error) {
-        console.warn(`${tag} HackerNews fetch failed:`, error);
-      }
-
-      // Stack Overflow
-      try {
-        const so = new StackOverflowClient();
-        const soResults = await searchSoftwareProductSO(so, productName, {
-          questionLimit: 10,
-          answersPerQuestion: 10,
-        });
-        const soMentions = extractStackOverflowMentions(soResults);
-        rawMentions.push(...soMentions);
-        if (soMentions.length > 0) activeSourceNames.push("stackoverflow");
-        console.log(`${tag} StackOverflow: ${soResults.length} questions, ${soMentions.length} mentions`);
-      } catch (error) {
-        console.warn(`${tag} StackOverflow fetch failed:`, error);
-      }
-
-      // Dev.to
-      try {
-        const devto = new DevToClient();
-        const devtoResults = await searchSoftwareProductDevTo(devto, productName, {
-          articleLimit: 10,
-        });
-        const devtoMentions = extractDevToMentions(devtoResults);
-        rawMentions.push(...devtoMentions);
-        if (devtoMentions.length > 0) activeSourceNames.push("devto");
-        console.log(`${tag} Dev.to: ${devtoResults.length} articles, ${devtoMentions.length} mentions`);
-      } catch (error) {
-        console.warn(`${tag} Dev.to fetch failed:`, error);
-      }
-
-      const sourcesAnalyzed = activeSourceNames.length;
       const sourceLabels: Record<SourceName, string> = {
         reddit: "Reddit",
         hackernews: "HackerNews",
         stackoverflow: "Stack Overflow",
         devto: "Dev.to",
       };
+
+      const sourceResults = await Promise.all([
+        (async () => {
+          const sourceStart = Date.now();
+          try {
+            const reddit = new RedditClient({
+              cacheTtlMs: 60000,
+              requestDelayMs: 250,
+              retryDelayMs: 750,
+              maxRetries: 1,
+            });
+            const redditResults = await searchSoftwareProduct(reddit, productName, {
+              postLimit: 8,
+              commentsPerPost: 6,
+            });
+            const mentions = extractRedditMentions(redditResults);
+            console.log(
+              `${tag} Reddit: ${redditResults.length} posts, ${mentions.length} mentions in ${elapsed(sourceStart)}`
+            );
+            return { name: "reddit" as const, mentions };
+          } catch (error) {
+            console.warn(`${tag} Reddit fetch failed after ${elapsed(sourceStart)}:`, error);
+            return { name: "reddit" as const, mentions: [] };
+          }
+        })(),
+        (async () => {
+          const sourceStart = Date.now();
+          try {
+            const hn = new HackerNewsClient();
+            const hnResults = await searchSoftwareProductHN(hn, productName, {
+              storyLimit: 8,
+              commentsPerStory: 12,
+            });
+            const mentions = extractHackerNewsMentions(hnResults);
+            console.log(
+              `${tag} HackerNews: ${hnResults.length} stories, ${mentions.length} mentions in ${elapsed(sourceStart)}`
+            );
+            return { name: "hackernews" as const, mentions };
+          } catch (error) {
+            console.warn(`${tag} HackerNews fetch failed after ${elapsed(sourceStart)}:`, error);
+            return { name: "hackernews" as const, mentions: [] };
+          }
+        })(),
+        (async () => {
+          const sourceStart = Date.now();
+          try {
+            const so = new StackOverflowClient();
+            const soResults = await searchSoftwareProductSO(so, productName, {
+              questionLimit: 8,
+              answersPerQuestion: 6,
+            });
+            const mentions = extractStackOverflowMentions(soResults);
+            console.log(
+              `${tag} StackOverflow: ${soResults.length} questions, ${mentions.length} mentions in ${elapsed(sourceStart)}`
+            );
+            return { name: "stackoverflow" as const, mentions };
+          } catch (error) {
+            console.warn(`${tag} StackOverflow fetch failed after ${elapsed(sourceStart)}:`, error);
+            return { name: "stackoverflow" as const, mentions: [] };
+          }
+        })(),
+        (async () => {
+          const sourceStart = Date.now();
+          try {
+            const devto = new DevToClient();
+            const devtoResults = await searchSoftwareProductDevTo(devto, productName, {
+              articleLimit: 8,
+            });
+            const mentions = extractDevToMentions(devtoResults);
+            console.log(
+              `${tag} Dev.to: ${devtoResults.length} articles, ${mentions.length} mentions in ${elapsed(sourceStart)}`
+            );
+            return { name: "devto" as const, mentions };
+          } catch (error) {
+            console.warn(`${tag} Dev.to fetch failed after ${elapsed(sourceStart)}:`, error);
+            return { name: "devto" as const, mentions: [] };
+          }
+        })(),
+      ]);
+
+      for (const { name, mentions } of sourceResults) {
+        rawMentions.push(...mentions);
+        if (mentions.length > 0) {
+          activeSourceNames.push(name);
+        }
+      }
+
+      const sourcesAnalyzed = activeSourceNames.length;
 
       console.log(
         `${tag} [1/6 COLLECT] Done in ${elapsed(stage1Start)} -- ` +
@@ -407,10 +432,18 @@ export const generateReport = action({
       console.log(`${tag} [2/6 PREPROCESS] Deduplicating mentions...`);
 
       const dedupedMentions = deduplicateMentions(rawMentions);
+      const mentionsForClassification = selectMentionsForClassification(
+        dedupedMentions,
+        MAX_CLASSIFICATION_MENTIONS
+      );
       const removedCount = rawMentions.length - dedupedMentions.length;
+      const sampledCount = dedupedMentions.length - mentionsForClassification.length;
       console.log(
         `${tag} [2/6 PREPROCESS] Done in ${elapsed(stage2Start)} -- ` +
-          `${rawMentions.length} raw -> ${dedupedMentions.length} unique (${removedCount} duplicates removed)`
+          `${rawMentions.length} raw -> ${dedupedMentions.length} unique (${removedCount} duplicates removed)` +
+          (sampledCount > 0
+            ? `, classifying ${mentionsForClassification.length} representative mentions`
+            : "")
       );
 
       // ----------------------------------------------------------------
@@ -418,7 +451,7 @@ export const generateReport = action({
       // ----------------------------------------------------------------
       const stage3Start = Date.now();
       console.log(
-        `${tag} [3/6 CLASSIFY] Classifying ${dedupedMentions.length} mentions...`
+        `${tag} [3/6 CLASSIFY] Classifying ${mentionsForClassification.length} mentions...`
       );
 
       await ctx.runMutation(internal.pipeline.updateReportStatus, {
@@ -429,7 +462,7 @@ export const generateReport = action({
       const classifiedMentions = await classifyMentions(
         ctx,
         productName,
-        dedupedMentions
+        mentionsForClassification
       );
       const relevantMentions = classifiedMentions.filter(
         (m) => m.classification.relevant
@@ -486,7 +519,7 @@ export const generateReport = action({
       );
       console.log(
         `${tag} [5/6 SYNTHESIZE] Done in ${elapsed(stage5Start)} -- ` +
-          `${report.strengths.length} strengths, ${report.issues.length} issues`
+          `${report.mode}, ${report.strengths.length} strengths, ${report.issues.length} issues`
       );
 
       // ----------------------------------------------------------------
@@ -495,21 +528,21 @@ export const generateReport = action({
       const stage6Start = Date.now();
       console.log(`${tag} [6/6 ASSEMBLE] Saving report to database...`);
 
-      // Build sourceBreakdown from deduped mentions
-      const dedupedSourceCounts = new Map<SourceName, number>();
-      for (const m of dedupedMentions) {
-        dedupedSourceCounts.set(m.source, (dedupedSourceCounts.get(m.source) || 0) + 1);
+      // Build sourceBreakdown from the sampled mentions that were actually classified.
+      const classifiedSourceCounts = new Map<SourceName, number>();
+      for (const m of mentionsForClassification) {
+        classifiedSourceCounts.set(m.source, (classifiedSourceCounts.get(m.source) || 0) + 1);
       }
       const sourceBreakdown = activeSourceNames.map((name) => ({
         name,
         label: sourceLabels[name] || name,
-        mentions: dedupedSourceCounts.get(name) || 0,
+        mentions: classifiedSourceCounts.get(name) || 0,
       }));
 
       await ctx.runMutation(internal.pipeline.saveReportResults, {
         reportId,
         overallScore: scores.overallScore,
-        totalMentions: relevantMentions.length,
+        totalMentions: classifiedMentions.length,
         sourcesAnalyzed: Math.max(sourcesAnalyzed, 1),
         summary: report.summary,
         strengths: report.strengths,
@@ -525,7 +558,7 @@ export const generateReport = action({
       );
       console.log(
         `${tag} Pipeline complete in ${elapsed(pipelineStart)} -- ` +
-          `score=${scores.overallScore}, mentions=${relevantMentions.length}, ` +
+          `score=${scores.overallScore}, mentions=${classifiedMentions.length}, ` +
           `strengths=${report.strengths.length}, issues=${report.issues.length}`
       );
     } catch (error) {
