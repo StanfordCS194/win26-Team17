@@ -98,10 +98,11 @@ function getModel() {
 // Agent Definitions
 // ============================================================================
 
-const classifierAgent = new Agent(components.agent, {
-  name: "mention-classifier",
-  languageModel: getModel(),
-  instructions: `You are a product feedback classifier. For each user mention about a product, determine:
+function createClassifierAgent() {
+  return new Agent(components.agent, {
+    name: "mention-classifier",
+    languageModel: getModel(),
+    instructions: `You are a product feedback classifier. For each user mention about a product, determine:
 
 1. Sentiment: positive, neutral, or negative
 2. Relevant aspects: which of [Price, Quality, Durability, Usability] the mention discusses
@@ -114,19 +115,25 @@ Aspect definitions:
 - Quality: build quality, reliability, polish, bugs, stability, craftsmanship
 - Durability: longevity, lasting, breaking, wear, lifespan, long-term use
 - Usability: ease of use, UX, UI, learning curve, intuitive, workflow, navigation`,
-});
+  });
+}
 
-const synthesizerAgent = new Agent(components.agent, {
-  name: "report-synthesizer",
-  languageModel: getModel(),
-  instructions: `You summarize product feedback data into executive reports. You receive pre-classified mention data with sentiment labels and aspect tags. Your job is to:
+function createSynthesizerAgent() {
+  return new Agent(components.agent, {
+    name: "report-synthesizer",
+    languageModel: getModel(),
+    instructions: `You summarize product feedback data into executive reports. You receive pre-classified mention data with sentiment labels and aspect tags. Your job is to:
 
 1. Identify 2-4 distinct positive themes (strengths)
 2. Identify 2-4 distinct negative themes (issues)
 3. Write a concise 2-3 sentence executive summary
 
 Reference specific mention indices that support each theme. Do not re-analyze sentiment -- use the provided classifications. Each theme title should be specific and descriptive (not generic like "User Feedback").`,
-});
+  });
+}
+
+type ClassifierAgent = ReturnType<typeof createClassifierAgent>;
+type SynthesizerAgent = ReturnType<typeof createSynthesizerAgent>;
 
 // ============================================================================
 // Classification
@@ -172,11 +179,12 @@ function withDerivedSentimentScore(
  */
 async function classifySingleMention(
   ctx: ActionCtx,
+  agent: ClassifierAgent,
   productName: string,
   mention: RawMention,
   threadId: string
 ): Promise<ClassifiedMention> {
-  const { object } = await classifierAgent.generateObject(
+  const { object } = await agent.generateObject(
     ctx,
     { threadId },
     {
@@ -199,13 +207,14 @@ async function classifySingleMention(
  */
 async function classifyIndividually(
   ctx: ActionCtx,
+  agent: ClassifierAgent,
   productName: string,
   mentions: RawMention[]
 ): Promise<ClassifiedMention[]> {
-  const { threadId } = await classifierAgent.createThread(ctx, {});
+  const { threadId } = await agent.createThread(ctx, {});
   const results = await Promise.allSettled(
     mentions.map((mention) =>
-      classifySingleMention(ctx, productName, mention, threadId)
+      classifySingleMention(ctx, agent, productName, mention, threadId)
     )
   );
 
@@ -237,12 +246,13 @@ async function classifyIndividually(
  */
 async function classifyBatch(
   ctx: ActionCtx,
+  agent: ClassifierAgent,
   productName: string,
   mentions: RawMention[]
 ): Promise<ClassifiedMention[]> {
   if (mentions.length === 0) return [];
 
-  const { threadId } = await classifierAgent.createThread(ctx, {});
+  const { threadId } = await agent.createThread(ctx, {});
   const prompt = `Classify each numbered user mention about "${productName}".
 
 Return exactly one classification for each mention, in the same order.
@@ -256,7 +266,7 @@ ${mentions
   .join("\n\n")}`;
 
   try {
-    const { object } = await classifierAgent.generateObject(
+    const { object } = await agent.generateObject(
       ctx,
       { threadId },
       {
@@ -271,7 +281,7 @@ ${mentions
         console.warn(
           `Batch classification returned ${object.classifications.length} results for 1 mention; falling back to single classification`
         );
-        return await classifyIndividually(ctx, productName, mentions);
+        return await classifyIndividually(ctx, agent, productName, mentions);
       }
 
       const midpoint = Math.ceil(mentions.length / 2);
@@ -279,8 +289,8 @@ ${mentions
         `Batch classification returned ${object.classifications.length} results for ${mentions.length} mentions; retrying in smaller batches`
       );
       const [left, right] = await Promise.all([
-        classifyBatch(ctx, productName, mentions.slice(0, midpoint)),
-        classifyBatch(ctx, productName, mentions.slice(midpoint)),
+        classifyBatch(ctx, agent, productName, mentions.slice(0, midpoint)),
+        classifyBatch(ctx, agent, productName, mentions.slice(midpoint)),
       ]);
       return [...left, ...right];
     }
@@ -304,7 +314,7 @@ ${mentions
         "Batch classification failed for a single mention; falling back to individual classification:",
         error
       );
-      return await classifyIndividually(ctx, productName, mentions);
+      return await classifyIndividually(ctx, agent, productName, mentions);
     }
 
     const midpoint = Math.ceil(mentions.length / 2);
@@ -313,8 +323,8 @@ ${mentions
       error
     );
     const [left, right] = await Promise.all([
-      classifyBatch(ctx, productName, mentions.slice(0, midpoint)),
-      classifyBatch(ctx, productName, mentions.slice(midpoint)),
+      classifyBatch(ctx, agent, productName, mentions.slice(0, midpoint)),
+      classifyBatch(ctx, agent, productName, mentions.slice(midpoint)),
     ]);
     return [...left, ...right];
   }
@@ -330,11 +340,12 @@ export async function classifyMentions(
 ): Promise<ClassifiedMention[]> {
   if (mentions.length === 0) return [];
 
+  const classifierAgent = createClassifierAgent();
   const allClassified: ClassifiedMention[] = [];
 
   for (let i = 0; i < mentions.length; i += CLASSIFY_BATCH_SIZE) {
     const batch = mentions.slice(i, i + CLASSIFY_BATCH_SIZE);
-    const classified = await classifyBatch(ctx, productName, batch);
+    const classified = await classifyBatch(ctx, classifierAgent, productName, batch);
     allClassified.push(...classified);
   }
 
@@ -365,6 +376,7 @@ export async function synthesizeReport(
     return synthesizeReportDeterministically(productName, mentions, scores);
   }
 
+  const synthesizerAgent: SynthesizerAgent = createSynthesizerAgent();
   const { threadId } = await synthesizerAgent.createThread(ctx, {});
   const mentionSummaries = mentions.slice(0, 20).map((m, i) => ({
     index: i,
