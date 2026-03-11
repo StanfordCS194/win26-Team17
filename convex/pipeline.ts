@@ -528,21 +528,21 @@ export const generateReport = action({
       const stage6Start = Date.now();
       console.log(`${tag} [6/6 ASSEMBLE] Saving report to database...`);
 
-      // Build sourceBreakdown from deduped mentions
-      const dedupedSourceCounts = new Map<SourceName, number>();
-      for (const m of dedupedMentions) {
-        dedupedSourceCounts.set(m.source, (dedupedSourceCounts.get(m.source) || 0) + 1);
+      // Build sourceBreakdown from the sampled mentions that were actually classified.
+      const classifiedSourceCounts = new Map<SourceName, number>();
+      for (const m of mentionsForClassification) {
+        classifiedSourceCounts.set(m.source, (classifiedSourceCounts.get(m.source) || 0) + 1);
       }
       const sourceBreakdown = activeSourceNames.map((name) => ({
         name,
         label: sourceLabels[name] || name,
-        mentions: dedupedSourceCounts.get(name) || 0,
+        mentions: classifiedSourceCounts.get(name) || 0,
       }));
 
       await ctx.runMutation(internal.pipeline.saveReportResults, {
         reportId,
         overallScore: scores.overallScore,
-        totalMentions: relevantMentions.length,
+        totalMentions: classifiedMentions.length,
         sourcesAnalyzed: Math.max(sourcesAnalyzed, 1),
         summary: report.summary,
         strengths: report.strengths,
@@ -558,7 +558,7 @@ export const generateReport = action({
       );
       console.log(
         `${tag} Pipeline complete in ${elapsed(pipelineStart)} -- ` +
-          `score=${scores.overallScore}, mentions=${relevantMentions.length}, ` +
+          `score=${scores.overallScore}, mentions=${classifiedMentions.length}, ` +
           `strengths=${report.strengths.length}, issues=${report.issues.length}`
       );
     } catch (error) {
