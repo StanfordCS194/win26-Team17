@@ -433,6 +433,7 @@ export const generateReport = action({
 
       const dedupedMentions = deduplicateMentions(rawMentions);
       const mentionsForClassification = selectMentionsForClassification(
+        productName,
         dedupedMentions,
         MAX_CLASSIFICATION_MENTIONS
       );
@@ -459,7 +460,7 @@ export const generateReport = action({
         status: "classifying",
       });
 
-      const classifiedMentions = await classifyMentions(
+      const { mentions: classifiedMentions, cacheHits, cacheMisses } = await classifyMentions(
         ctx,
         productName,
         mentionsForClassification
@@ -481,7 +482,8 @@ export const generateReport = action({
       console.log(
         `${tag} [3/6 CLASSIFY] Done in ${elapsed(stage3Start)} -- ` +
           `${classifiedMentions.length} classified, ${relevantMentions.length} relevant ` +
-          `(+${sentimentCounts.positive} ~${sentimentCounts.neutral} -${sentimentCounts.negative})`
+          `(+${sentimentCounts.positive} ~${sentimentCounts.neutral} -${sentimentCounts.negative}), ` +
+          `cache ${cacheHits}/${cacheHits + cacheMisses}`
       );
 
       // ----------------------------------------------------------------

@@ -9,6 +9,7 @@
  */
 
 import type * as analytics from "../analytics.js";
+import type * as classificationCache from "../classificationCache.js";
 import type * as pipeline from "../pipeline.js";
 import type * as reports from "../reports.js";
 import type * as services_classifier from "../services/classifier.js";
@@ -31,6 +32,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   analytics: typeof analytics;
+  classificationCache: typeof classificationCache;
   pipeline: typeof pipeline;
   reports: typeof reports;
   "services/classifier": typeof services_classifier;
