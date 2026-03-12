@@ -38,6 +38,13 @@ export interface RawMention {
 
 const llmMentionClassificationSchema = z.object({
   sentiment: z.enum(["positive", "neutral", "negative"]),
+  sentimentScore: z
+    .number()
+    .min(0)
+    .max(100)
+    .describe(
+      "Sentiment intensity from 0 (most negative) to 100 (most positive). Use the full range: 85-95 for strongly positive, 60-75 for mildly positive, 45-55 for neutral, 25-40 for mildly negative, 5-15 for strongly negative."
+    ),
   aspects: z
     .array(z.enum(ASPECTS))
     .describe(
@@ -105,8 +112,9 @@ function createClassifierAgent() {
     instructions: `You are a product feedback classifier. For each user mention about a product, determine:
 
 1. Sentiment: positive, neutral, or negative
-2. Relevant aspects: which of [Price, Quality, Durability, Usability] the mention discusses
-3. Relevance: whether the mention is genuinely about the product
+2. Sentiment score: 0-100 intensity (use the full range, not just 25/50/75)
+3. Relevant aspects: which of [Price, Quality, Durability, Usability] the mention discusses
+4. Relevance: whether the mention is genuinely about the product
 
 Be precise. A mention can discuss zero or multiple aspects. Only mark aspects that are clearly discussed, not merely implied.
 
@@ -114,7 +122,14 @@ Aspect definitions:
 - Price: cost, pricing, value for money, subscription, free tier, expensive, cheap
 - Quality: build quality, reliability, polish, bugs, stability, craftsmanship
 - Durability: longevity, lasting, breaking, wear, lifespan, long-term use
-- Usability: ease of use, UX, UI, learning curve, intuitive, workflow, navigation`,
+- Usability: ease of use, UX, UI, learning curve, intuitive, workflow, navigation
+
+Examples:
+- "It's expensive but incredibly reliable" -> sentiment: positive, sentimentScore: 65, aspects: [Price, Quality], relevant: true
+- "I switched from ProductName to a competitor last month" -> sentiment: negative, sentimentScore: 35, aspects: [], relevant: true
+- "Someone in the thread mentioned ProductName but was talking about something else" -> relevant: false
+
+Be alert for sarcasm or irony (e.g. "This product is *great*, if you love waiting 10 minutes to load"). Classify based on the actual intent, not surface-level word choice.`,
   });
 }
 
@@ -139,11 +154,11 @@ type SynthesizerAgent = ReturnType<typeof createSynthesizerAgent>;
 // Classification
 // ============================================================================
 
-const CLASSIFY_BATCH_SIZE = 24;
+const CLASSIFY_BATCH_SIZE = 25;
 const CLASSIFY_TEXT_LIMIT = 500;
 const SYNTHESIS_TEXT_LIMIT = 500;
 const SHOULD_USE_LLM_SYNTHESIS =
-  process.env.PIPELINE_USE_LLM_SYNTHESIS === "true";
+  process.env.PIPELINE_USE_LLM_SYNTHESIS !== "false";
 const NO_HISTORY_AGENT_OPTIONS = {
   storageOptions: {
     saveMessages: "none" as const,
@@ -161,16 +176,18 @@ function isQuotaError(error: unknown): boolean {
 }
 
 function withDerivedSentimentScore(
-  classification: Omit<MentionClassification, "sentimentScore">
+  classification: Omit<MentionClassification, "sentimentScore"> & { sentimentScore?: number }
 ): MentionClassification {
+  const fallback =
+    classification.sentiment === "positive"
+      ? 75
+      : classification.sentiment === "negative"
+        ? 25
+        : 50;
   return {
     ...classification,
     sentimentScore:
-      classification.sentiment === "positive"
-        ? 75
-        : classification.sentiment === "negative"
-          ? 25
-          : 50,
+      classification.sentimentScore != null ? classification.sentimentScore : fallback,
   };
 }
 
@@ -341,15 +358,17 @@ export async function classifyMentions(
   if (mentions.length === 0) return [];
 
   const classifierAgent = createClassifierAgent();
-  const allClassified: ClassifiedMention[] = [];
 
+  const batches: RawMention[][] = [];
   for (let i = 0; i < mentions.length; i += CLASSIFY_BATCH_SIZE) {
-    const batch = mentions.slice(i, i + CLASSIFY_BATCH_SIZE);
-    const classified = await classifyBatch(ctx, classifierAgent, productName, batch);
-    allClassified.push(...classified);
+    batches.push(mentions.slice(i, i + CLASSIFY_BATCH_SIZE));
   }
 
-  return allClassified;
+  const batchResults = await Promise.all(
+    batches.map((batch) => classifyBatch(ctx, classifierAgent, productName, batch))
+  );
+
+  return batchResults.flat();
 }
 
 /**
@@ -361,7 +380,11 @@ export async function synthesizeReport(
   ctx: ActionCtx,
   productName: string,
   mentions: ClassifiedMention[],
-  scores: { overallScore: number; aspects: Array<{ name: string; score: number; mentions: number }> }
+  scores: {
+    overallScore: number;
+    aspects: Array<{ name: string; score: number; mentions: number }>;
+    confidence?: { overall: number; coverage: number; agreement: number };
+  }
 ): Promise<SynthesizedReport> {
   if (mentions.length === 0) {
     return {
@@ -378,22 +401,29 @@ export async function synthesizeReport(
 
   const synthesizerAgent: SynthesizerAgent = createSynthesizerAgent();
   const { threadId } = await synthesizerAgent.createThread(ctx, {});
-  const mentionSummaries = mentions.slice(0, 20).map((m, i) => ({
+  const mentionSummaries = mentions.map((m, i) => ({
     index: i,
     text: m.text.slice(0, SYNTHESIS_TEXT_LIMIT),
     sentiment: m.classification.sentiment,
     aspects: m.classification.aspects,
   }));
 
+  const sentimentDist = {
+    positive: mentions.filter((m) => m.classification.sentiment === "positive").length,
+    neutral: mentions.filter((m) => m.classification.sentiment === "neutral").length,
+    negative: mentions.filter((m) => m.classification.sentiment === "negative").length,
+  };
+
   const prompt = `Analyze ${mentionSummaries.length} classified mentions about "${productName}".
 
 Overall score: ${scores.overallScore}/100
-Aspect scores: ${scores.aspects.map((a) => `${a.name}: ${a.score}/100 (${a.mentions} mentions)`).join(", ")}
+Sentiment distribution: ${sentimentDist.positive} positive, ${sentimentDist.neutral} neutral, ${sentimentDist.negative} negative
+Aspect scores: ${scores.aspects.map((a) => `${a.name}: ${a.score}/100 (${a.mentions} mentions)`).join(", ")}${scores.confidence ? `\nData confidence: ${Math.round(scores.confidence.overall * 100)}% (coverage: ${Math.round(scores.confidence.coverage * 100)}%, agreement: ${Math.round(scores.confidence.agreement * 100)}%)` : ""}
 
 Classified mentions:
 ${JSON.stringify(mentionSummaries, null, 2)}
 
-Identify 2-4 strengths (positive themes) and 2-4 issues (negative themes). Reference mention indices that support each theme.`;
+Identify 2-4 strengths (positive themes) and 2-4 issues (negative themes). Reference mention indices that support each theme. Focus on themes supported by 2+ mentions; avoid surfacing one-off comments as themes.`;
 
   try {
     const { object } = await synthesizerAgent.generateObject(

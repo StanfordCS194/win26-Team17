@@ -28,7 +28,7 @@ import type { RawMention, SourceName } from "./services/classifier";
 import { selectMentionsForClassification } from "./services/mentionSelection";
 import { computeAllScores, ASPECTS } from "./services/scoring";
 
-const MAX_CLASSIFICATION_MENTIONS = 24;
+const MAX_CLASSIFICATION_MENTIONS = 50;
 
 // ============================================================================
 // Helpers: Extract Raw Mentions from Each Source
@@ -403,10 +403,15 @@ export const generateReport = action({
 
       const sourcesAnalyzed = activeSourceNames.length;
 
+      const failedSources = sourceResults.filter((s) => s.mentions.length === 0).map((s) => s.name);
       console.log(
         `${tag} [1/6 COLLECT] Done in ${elapsed(stage1Start)} -- ` +
-          `${rawMentions.length} raw mentions from ${sourcesAnalyzed} sources`
+          `${rawMentions.length} raw mentions from ${sourcesAnalyzed}/4 sources` +
+          (failedSources.length > 0 ? ` (no data: ${failedSources.join(", ")})` : "")
       );
+      if (sourcesAnalyzed < 2 && rawMentions.length > 0) {
+        console.warn(`${tag} Low source diversity: only ${sourcesAnalyzed} source(s) returned data`);
+      }
 
       // Handle empty results early
       if (rawMentions.length === 0) {
@@ -454,16 +459,17 @@ export const generateReport = action({
         `${tag} [3/6 CLASSIFY] Classifying ${mentionsForClassification.length} mentions...`
       );
 
-      await ctx.runMutation(internal.pipeline.updateReportStatus, {
-        reportId,
-        status: "classifying",
-      });
-
-      const classifiedMentions = await classifyMentions(
-        ctx,
-        productName,
-        mentionsForClassification
-      );
+      const [, classifiedMentions] = await Promise.all([
+        ctx.runMutation(internal.pipeline.updateReportStatus, {
+          reportId,
+          status: "classifying",
+        }),
+        classifyMentions(
+          ctx,
+          productName,
+          mentionsForClassification
+        ),
+      ]);
       const relevantMentions = classifiedMentions.filter(
         (m) => m.classification.relevant
       );
@@ -478,11 +484,21 @@ export const generateReport = action({
           (m) => m.classification.sentiment === "negative"
         ).length,
       };
+      const classifyRate = mentionsForClassification.length > 0
+        ? ((classifiedMentions.length / mentionsForClassification.length) * 100).toFixed(0)
+        : "100";
       console.log(
         `${tag} [3/6 CLASSIFY] Done in ${elapsed(stage3Start)} -- ` +
-          `${classifiedMentions.length} classified, ${relevantMentions.length} relevant ` +
+          `${classifiedMentions.length}/${mentionsForClassification.length} classified (${classifyRate}%), ` +
+          `${relevantMentions.length} relevant ` +
           `(+${sentimentCounts.positive} ~${sentimentCounts.neutral} -${sentimentCounts.negative})`
       );
+      if (classifiedMentions.length < mentionsForClassification.length * 0.9) {
+        console.warn(
+          `${tag} Classification success rate below 90%: ` +
+            `${classifiedMentions.length}/${mentionsForClassification.length} mentions classified`
+        );
+      }
 
       // ----------------------------------------------------------------
       // STAGE 4: AGGREGATE -- Deterministic score computation
@@ -490,7 +506,7 @@ export const generateReport = action({
       const stage4Start = Date.now();
       console.log(`${tag} [4/6 AGGREGATE] Computing scores...`);
 
-      await ctx.runMutation(internal.pipeline.updateReportStatus, {
+      void ctx.runMutation(internal.pipeline.updateReportStatus, {
         reportId,
         status: "analyzing",
       });
