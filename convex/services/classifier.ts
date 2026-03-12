@@ -140,8 +140,8 @@ type SynthesizerAgent = ReturnType<typeof createSynthesizerAgent>;
 // ============================================================================
 
 const CLASSIFY_BATCH_SIZE = 24;
-const CLASSIFY_TEXT_LIMIT = 100;
-const SYNTHESIS_TEXT_LIMIT = 120;
+const CLASSIFY_TEXT_LIMIT = 500;
+const SYNTHESIS_TEXT_LIMIT = 500;
 const SHOULD_USE_LLM_SYNTHESIS =
   process.env.PIPELINE_USE_LLM_SYNTHESIS === "true";
 const NO_HISTORY_AGENT_OPTIONS = {
