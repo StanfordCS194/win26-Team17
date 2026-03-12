@@ -60,24 +60,29 @@ export interface ScoringResult {
 // Overall Sentiment Score
 // ============================================================================
 
+const POSITIVE_WEIGHT = 1.5;
+
+function weightedAverage(mentions: ClassifiedMention[]): number {
+  let weightedSum = 0;
+  let totalWeight = 0;
+  for (const m of mentions) {
+    const w = m.classification.sentimentScore > 50 ? POSITIVE_WEIGHT : 1;
+    weightedSum += m.classification.sentimentScore * w;
+    totalWeight += w;
+  }
+  return weightedSum / totalWeight;
+}
+
 /**
- * PRD formula: score = 50 + ((positiveCount - negativeCount) / totalCount) * 50
- * Score of 50 = neutral, >50 = positive, <50 = negative.
+ * Intensity-weighted overall score: weighted average of sentimentScores for relevant mentions.
+ * Positive mentions (score > 50) count 1.5x so the score tilts toward strengths.
  * Only counts mentions marked as relevant.
  */
 export function computeOverallScore(mentions: ClassifiedMention[]): number {
   const relevant = mentions.filter((m) => m.classification.relevant);
   if (relevant.length === 0) return 50;
 
-  const positiveCount = relevant.filter(
-    (m) => m.classification.sentiment === "positive"
-  ).length;
-  const negativeCount = relevant.filter(
-    (m) => m.classification.sentiment === "negative"
-  ).length;
-  const total = relevant.length;
-
-  const score = 50 + ((positiveCount - negativeCount) / total) * 50;
+  const score = weightedAverage(relevant);
   return Math.round(Math.max(0, Math.min(100, score)));
 }
 
@@ -86,8 +91,8 @@ export function computeOverallScore(mentions: ClassifiedMention[]): number {
 // ============================================================================
 
 /**
- * Same formula as overall score, but filtered to mentions that reference
- * each specific aspect. Aspects with no mentions default to 50.
+ * Intensity-weighted aspect scores: average of sentimentScores for mentions
+ * tagged with each aspect. Aspects with no mentions default to 50.
  */
 export function computeAspectScores(
   mentions: ClassifiedMention[]
@@ -103,20 +108,12 @@ export function computeAspectScores(
       return { name: aspect, score: 50, mentions: 0, trend: "stable" as const };
     }
 
-    const positiveCount = aspectMentions.filter(
-      (m) => m.classification.sentiment === "positive"
-    ).length;
-    const negativeCount = aspectMentions.filter(
-      (m) => m.classification.sentiment === "negative"
-    ).length;
-    const total = aspectMentions.length;
-
-    const score = 50 + ((positiveCount - negativeCount) / total) * 50;
+    const score = weightedAverage(aspectMentions);
 
     return {
       name: aspect,
       score: Math.round(Math.max(0, Math.min(100, score))),
-      mentions: total,
+      mentions: aspectMentions.length,
       trend: "stable" as const,
     };
   });
@@ -180,46 +177,39 @@ export function computeConfidence(
     return { overall: 0, coverage: 0, agreement: 0, sourceDiversity: 0 };
   }
 
+  // Single-pass: accumulate per-aspect sentiment counts and unique authors
+  const aspectStats = Object.fromEntries(
+    ASPECTS.map((a) => [a, { total: 0, positive: 0, neutral: 0, negative: 0 }])
+  ) as Record<Aspect, { total: number; positive: number; neutral: number; negative: number }>;
+  const authors = new Set<string>();
+
+  for (const m of relevant) {
+    authors.add(m.author);
+    for (const aspect of m.classification.aspects) {
+      if (aspect in aspectStats) {
+        const s = aspectStats[aspect as Aspect];
+        s.total++;
+        s[m.classification.sentiment]++;
+      }
+    }
+  }
+
   // Coverage: % of aspects (4) that have >5 mentions
-  const aspectCounts = ASPECTS.map(
-    (aspect) =>
-      relevant.filter((m) => m.classification.aspects.includes(aspect)).length
-  );
-  const coveredAspects = aspectCounts.filter((count) => count > 5).length;
+  const coveredAspects = ASPECTS.filter((a) => aspectStats[a].total > 5).length;
   const coverage = coveredAspects / ASPECTS.length;
 
   // Agreement: avg % of mentions agreeing on sentiment direction per aspect
   const agreementPerAspect = ASPECTS.map((aspect) => {
-    const aspectMentions = relevant.filter((m) =>
-      m.classification.aspects.includes(aspect)
-    );
-    if (aspectMentions.length === 0) return 1;
-
-    const sentimentCounts = {
-      positive: aspectMentions.filter(
-        (m) => m.classification.sentiment === "positive"
-      ).length,
-      neutral: aspectMentions.filter(
-        (m) => m.classification.sentiment === "neutral"
-      ).length,
-      negative: aspectMentions.filter(
-        (m) => m.classification.sentiment === "negative"
-      ).length,
-    };
-    const maxCount = Math.max(
-      sentimentCounts.positive,
-      sentimentCounts.neutral,
-      sentimentCounts.negative
-    );
-    return maxCount / aspectMentions.length;
+    const s = aspectStats[aspect];
+    if (s.total === 0) return 1;
+    return Math.max(s.positive, s.neutral, s.negative) / s.total;
   });
   const agreement =
     agreementPerAspect.reduce((sum, a) => sum + a, 0) /
     agreementPerAspect.length;
 
   // Source diversity: unique authors / total mentions (capped at 1)
-  const uniqueAuthors = new Set(relevant.map((m) => m.author)).size;
-  const sourceDiversity = Math.min(1, uniqueAuthors / totalMentions);
+  const sourceDiversity = Math.min(1, authors.size / totalMentions);
 
   const overall = coverage * agreement * sourceDiversity;
 

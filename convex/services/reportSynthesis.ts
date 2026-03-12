@@ -92,10 +92,6 @@ const THEME_COPY: Record<
   },
 };
 
-function getThemeKey(mention: ClassifiedMention): ThemeKey {
-  return mention.classification.aspects[0] ?? "General";
-}
-
 function compareMentions(left: ClassifiedMention, right: ClassifiedMention): number {
   const leftIntensity = Math.abs(left.classification.sentimentScore - 50);
   const rightIntensity = Math.abs(right.classification.sentimentScore - 50);
@@ -122,10 +118,15 @@ function buildInsights(
       continue;
     }
 
-    const themeKey = getThemeKey(mention);
-    const existing = themedMentions.get(themeKey) ?? [];
-    existing.push(mention);
-    themedMentions.set(themeKey, existing);
+    const themeKeys: ThemeKey[] =
+      mention.classification.aspects.length > 0
+        ? (mention.classification.aspects as ThemeKey[])
+        : ["General"];
+    for (const themeKey of themeKeys) {
+      const existing = themedMentions.get(themeKey) ?? [];
+      existing.push(mention);
+      themedMentions.set(themeKey, existing);
+    }
   }
 
   return [...themedMentions.entries()]

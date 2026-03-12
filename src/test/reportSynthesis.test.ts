@@ -76,6 +76,33 @@ describe("synthesizeReportDeterministically", () => {
     expect(report.issues[1]?.title).toBe("Reliability & Quality Problems");
   });
 
+  it("groups a multi-aspect mention into both themes", () => {
+    const mentions: ClassifiedMention[] = [
+      mention("negative", 15, ["Price", "Quality"], "Too expensive for how buggy it is.", 0),
+      mention("negative", 22, ["Price"], "The pricing model is really frustrating.", 1),
+      mention("negative", 18, ["Quality"], "Constant crashes make it unusable.", 2),
+    ];
+
+    const report = synthesizeReportDeterministically("TestApp", mentions, {
+      overallScore: 18,
+      aspects: [
+        { name: "Price", score: 20, mentions: 2, trend: "stable" },
+        { name: "Quality", score: 20, mentions: 2, trend: "stable" },
+        { name: "Durability", score: 50, mentions: 0, trend: "stable" },
+        { name: "Usability", score: 50, mentions: 0, trend: "stable" },
+      ],
+    });
+
+    const issueTitles = report.issues.map((i) => i.title);
+    expect(issueTitles).toContain("Pricing & Value Friction");
+    expect(issueTitles).toContain("Reliability & Quality Problems");
+    // The multi-aspect mention contributes to both themes
+    const priceIssue = report.issues.find((i) => i.title === "Pricing & Value Friction")!;
+    const qualityIssue = report.issues.find((i) => i.title === "Reliability & Quality Problems")!;
+    expect(priceIssue.frequency).toBe(2);
+    expect(qualityIssue.frequency).toBe(2);
+  });
+
   it("returns an empty report when nothing is relevant", () => {
     const report = synthesizeReportDeterministically(
       "Slack",
