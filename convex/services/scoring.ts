@@ -61,8 +61,9 @@ export interface ScoringResult {
 // ============================================================================
 
 const POSITIVE_WEIGHT = 1.5;
+const AMPLIFICATION = 2;
 
-function weightedAverage(mentions: ClassifiedMention[]): number {
+function amplifiedScore(mentions: ClassifiedMention[]): number {
   let weightedSum = 0;
   let totalWeight = 0;
   for (const m of mentions) {
@@ -70,19 +71,22 @@ function weightedAverage(mentions: ClassifiedMention[]): number {
     weightedSum += m.classification.sentimentScore * w;
     totalWeight += w;
   }
-  return weightedSum / totalWeight;
+  const avg = weightedSum / totalWeight;
+  // LLM scores cluster around 50, so amplify deviation to use the full 0-100 range
+  return 50 + (avg - 50) * AMPLIFICATION;
 }
 
 /**
- * Intensity-weighted overall score: weighted average of sentimentScores for relevant mentions.
+ * Intensity-weighted overall score with amplified spread.
  * Positive mentions (score > 50) count 1.5x so the score tilts toward strengths.
+ * Deviations from neutral are amplified 2x so scores use the full 0-100 range.
  * Only counts mentions marked as relevant.
  */
 export function computeOverallScore(mentions: ClassifiedMention[]): number {
   const relevant = mentions.filter((m) => m.classification.relevant);
   if (relevant.length === 0) return 50;
 
-  const score = weightedAverage(relevant);
+  const score = amplifiedScore(relevant);
   return Math.round(Math.max(0, Math.min(100, score)));
 }
 
@@ -108,7 +112,7 @@ export function computeAspectScores(
       return { name: aspect, score: 50, mentions: 0, trend: "stable" as const };
     }
 
-    const score = weightedAverage(aspectMentions);
+    const score = amplifiedScore(aspectMentions);
 
     return {
       name: aspect,

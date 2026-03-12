@@ -28,7 +28,7 @@ import type { RawMention, SourceName } from "./services/classifier";
 import { selectMentionsForClassification } from "./services/mentionSelection";
 import { computeAllScores, ASPECTS } from "./services/scoring";
 
-const MAX_CLASSIFICATION_MENTIONS = 50;
+const MAX_CLASSIFICATION_MENTIONS = 75;
 
 // ============================================================================
 // Helpers: Extract Raw Mentions from Each Source
@@ -326,8 +326,8 @@ export const generateReport = action({
               maxRetries: 1,
             });
             const redditResults = await searchSoftwareProduct(reddit, productName, {
-              postLimit: 8,
-              commentsPerPost: 6,
+              postLimit: 12,
+              commentsPerPost: 8,
             });
             const mentions = extractRedditMentions(redditResults);
             console.log(
@@ -344,8 +344,8 @@ export const generateReport = action({
           try {
             const hn = new HackerNewsClient();
             const hnResults = await searchSoftwareProductHN(hn, productName, {
-              storyLimit: 8,
-              commentsPerStory: 12,
+              storyLimit: 12,
+              commentsPerStory: 15,
             });
             const mentions = extractHackerNewsMentions(hnResults);
             console.log(
@@ -362,8 +362,8 @@ export const generateReport = action({
           try {
             const so = new StackOverflowClient();
             const soResults = await searchSoftwareProductSO(so, productName, {
-              questionLimit: 8,
-              answersPerQuestion: 6,
+              questionLimit: 12,
+              answersPerQuestion: 8,
             });
             const mentions = extractStackOverflowMentions(soResults);
             console.log(
@@ -380,7 +380,7 @@ export const generateReport = action({
           try {
             const devto = new DevToClient();
             const devtoResults = await searchSoftwareProductDevTo(devto, productName, {
-              articleLimit: 8,
+              articleLimit: 12,
             });
             const mentions = extractDevToMentions(devtoResults);
             console.log(
