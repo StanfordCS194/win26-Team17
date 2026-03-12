@@ -28,8 +28,8 @@ import type { RawMention, SourceName } from "./services/classifier";
 import { selectMentionsForClassification } from "./services/mentionSelection";
 import { computeAllScores, ASPECTS } from "./services/scoring";
 
-const MAX_CLASSIFICATION_MENTIONS = 75;
-const MIN_MENTIONS_FOR_RELIABLE_SCORE = 15;
+const MAX_CLASSIFICATION_MENTIONS = 150;
+const MIN_MENTIONS_FOR_RELIABLE_SCORE = 100;
 
 interface FetchLimits {
   postLimit: number;
@@ -42,23 +42,23 @@ interface FetchLimits {
 }
 
 const STANDARD_LIMITS: FetchLimits = {
-  postLimit: 12,
-  commentsPerPost: 8,
-  storyLimit: 12,
-  commentsPerStory: 15,
-  questionLimit: 12,
-  answersPerQuestion: 8,
-  articleLimit: 12,
-};
-
-const EXPANDED_LIMITS: FetchLimits = {
   postLimit: 25,
-  commentsPerPost: 15,
+  commentsPerPost: 20,
   storyLimit: 20,
   commentsPerStory: 25,
   questionLimit: 20,
   answersPerQuestion: 15,
   articleLimit: 20,
+};
+
+const EXPANDED_LIMITS: FetchLimits = {
+  postLimit: 25,
+  commentsPerPost: 25,
+  storyLimit: 25,
+  commentsPerStory: 30,
+  questionLimit: 25,
+  answersPerQuestion: 20,
+  articleLimit: 25,
 };
 
 // ============================================================================
