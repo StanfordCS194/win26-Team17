@@ -43,7 +43,7 @@ const llmMentionClassificationSchema = z.object({
     .min(0)
     .max(100)
     .describe(
-      "Sentiment intensity from 0 (most negative) to 100 (most positive). Use the full range: 85-95 for strongly positive, 60-75 for mildly positive, 45-55 for neutral, 25-40 for mildly negative, 5-15 for strongly negative."
+      "Sentiment intensity from 0 (most negative) to 100 (most positive). Use the full range: 85-100 for strongly positive, 70-84 for mildly positive, 45-55 for neutral, 16-30 for mildly negative, 0-15 for strongly negative."
     ),
   aspects: z
     .array(z.enum(ASPECTS))
@@ -112,7 +112,7 @@ function createClassifierAgent() {
     instructions: `You are a product feedback classifier. For each user mention about a product, determine:
 
 1. Sentiment: positive, neutral, or negative
-2. Sentiment score: 0-100 intensity (use the full range, not just 25/50/75)
+2. Sentiment score: 0-100 intensity (use the full range -- strongly positive should be 85+, mildly positive 70-84, neutral 45-55, mildly negative 16-30, strongly negative 0-15)
 3. Relevant aspects: which of [Price, Quality, Durability, Usability] the mention discusses
 4. Relevance: whether the mention is genuinely about the product
 

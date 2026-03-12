@@ -61,7 +61,7 @@ export interface ScoringResult {
 // ============================================================================
 
 const POSITIVE_WEIGHT = 1.5;
-const AMPLIFICATION = 2;
+const AMPLIFICATION = 2.5;
 
 function amplifiedScore(mentions: ClassifiedMention[]): number {
   let weightedSum = 0;
