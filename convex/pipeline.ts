@@ -29,6 +29,37 @@ import { selectMentionsForClassification } from "./services/mentionSelection";
 import { computeAllScores, ASPECTS } from "./services/scoring";
 
 const MAX_CLASSIFICATION_MENTIONS = 75;
+const MIN_MENTIONS_FOR_RELIABLE_SCORE = 15;
+
+interface FetchLimits {
+  postLimit: number;
+  commentsPerPost: number;
+  storyLimit: number;
+  commentsPerStory: number;
+  questionLimit: number;
+  answersPerQuestion: number;
+  articleLimit: number;
+}
+
+const STANDARD_LIMITS: FetchLimits = {
+  postLimit: 12,
+  commentsPerPost: 8,
+  storyLimit: 12,
+  commentsPerStory: 15,
+  questionLimit: 12,
+  answersPerQuestion: 8,
+  articleLimit: 12,
+};
+
+const EXPANDED_LIMITS: FetchLimits = {
+  postLimit: 25,
+  commentsPerPost: 15,
+  storyLimit: 20,
+  commentsPerStory: 25,
+  questionLimit: 20,
+  answersPerQuestion: 15,
+  articleLimit: 20,
+};
 
 // ============================================================================
 // Helpers: Extract Raw Mentions from Each Source
@@ -164,6 +195,96 @@ function extractDevToMentions(
   }
 
   return mentions;
+}
+
+// ============================================================================
+// Fetch All Sources
+// ============================================================================
+
+async function fetchAllSources(
+  productName: string,
+  limits: FetchLimits,
+  tag: string,
+  elapsed: (since: number) => string
+): Promise<Array<{ name: SourceName; mentions: RawMention[] }>> {
+  return Promise.all([
+    (async () => {
+      const sourceStart = Date.now();
+      try {
+        const reddit = new RedditClient({
+          cacheTtlMs: 60000,
+          requestDelayMs: 250,
+          retryDelayMs: 750,
+          maxRetries: 1,
+        });
+        const redditResults = await searchSoftwareProduct(reddit, productName, {
+          postLimit: limits.postLimit,
+          commentsPerPost: limits.commentsPerPost,
+        });
+        const mentions = extractRedditMentions(redditResults);
+        console.log(
+          `${tag} Reddit: ${redditResults.length} posts, ${mentions.length} mentions in ${elapsed(sourceStart)}`
+        );
+        return { name: "reddit" as const, mentions };
+      } catch (error) {
+        console.warn(`${tag} Reddit fetch failed after ${elapsed(sourceStart)}:`, error);
+        return { name: "reddit" as const, mentions: [] };
+      }
+    })(),
+    (async () => {
+      const sourceStart = Date.now();
+      try {
+        const hn = new HackerNewsClient();
+        const hnResults = await searchSoftwareProductHN(hn, productName, {
+          storyLimit: limits.storyLimit,
+          commentsPerStory: limits.commentsPerStory,
+        });
+        const mentions = extractHackerNewsMentions(hnResults);
+        console.log(
+          `${tag} HackerNews: ${hnResults.length} stories, ${mentions.length} mentions in ${elapsed(sourceStart)}`
+        );
+        return { name: "hackernews" as const, mentions };
+      } catch (error) {
+        console.warn(`${tag} HackerNews fetch failed after ${elapsed(sourceStart)}:`, error);
+        return { name: "hackernews" as const, mentions: [] };
+      }
+    })(),
+    (async () => {
+      const sourceStart = Date.now();
+      try {
+        const so = new StackOverflowClient();
+        const soResults = await searchSoftwareProductSO(so, productName, {
+          questionLimit: limits.questionLimit,
+          answersPerQuestion: limits.answersPerQuestion,
+        });
+        const mentions = extractStackOverflowMentions(soResults);
+        console.log(
+          `${tag} StackOverflow: ${soResults.length} questions, ${mentions.length} mentions in ${elapsed(sourceStart)}`
+        );
+        return { name: "stackoverflow" as const, mentions };
+      } catch (error) {
+        console.warn(`${tag} StackOverflow fetch failed after ${elapsed(sourceStart)}:`, error);
+        return { name: "stackoverflow" as const, mentions: [] };
+      }
+    })(),
+    (async () => {
+      const sourceStart = Date.now();
+      try {
+        const devto = new DevToClient();
+        const devtoResults = await searchSoftwareProductDevTo(devto, productName, {
+          articleLimit: limits.articleLimit,
+        });
+        const mentions = extractDevToMentions(devtoResults);
+        console.log(
+          `${tag} Dev.to: ${devtoResults.length} articles, ${mentions.length} mentions in ${elapsed(sourceStart)}`
+        );
+        return { name: "devto" as const, mentions };
+      } catch (error) {
+        console.warn(`${tag} Dev.to fetch failed after ${elapsed(sourceStart)}:`, error);
+        return { name: "devto" as const, mentions: [] };
+      }
+    })(),
+  ]);
 }
 
 // ============================================================================
@@ -315,84 +436,8 @@ export const generateReport = action({
         devto: "Dev.to",
       };
 
-      const sourceResults = await Promise.all([
-        (async () => {
-          const sourceStart = Date.now();
-          try {
-            const reddit = new RedditClient({
-              cacheTtlMs: 60000,
-              requestDelayMs: 250,
-              retryDelayMs: 750,
-              maxRetries: 1,
-            });
-            const redditResults = await searchSoftwareProduct(reddit, productName, {
-              postLimit: 12,
-              commentsPerPost: 8,
-            });
-            const mentions = extractRedditMentions(redditResults);
-            console.log(
-              `${tag} Reddit: ${redditResults.length} posts, ${mentions.length} mentions in ${elapsed(sourceStart)}`
-            );
-            return { name: "reddit" as const, mentions };
-          } catch (error) {
-            console.warn(`${tag} Reddit fetch failed after ${elapsed(sourceStart)}:`, error);
-            return { name: "reddit" as const, mentions: [] };
-          }
-        })(),
-        (async () => {
-          const sourceStart = Date.now();
-          try {
-            const hn = new HackerNewsClient();
-            const hnResults = await searchSoftwareProductHN(hn, productName, {
-              storyLimit: 12,
-              commentsPerStory: 15,
-            });
-            const mentions = extractHackerNewsMentions(hnResults);
-            console.log(
-              `${tag} HackerNews: ${hnResults.length} stories, ${mentions.length} mentions in ${elapsed(sourceStart)}`
-            );
-            return { name: "hackernews" as const, mentions };
-          } catch (error) {
-            console.warn(`${tag} HackerNews fetch failed after ${elapsed(sourceStart)}:`, error);
-            return { name: "hackernews" as const, mentions: [] };
-          }
-        })(),
-        (async () => {
-          const sourceStart = Date.now();
-          try {
-            const so = new StackOverflowClient();
-            const soResults = await searchSoftwareProductSO(so, productName, {
-              questionLimit: 12,
-              answersPerQuestion: 8,
-            });
-            const mentions = extractStackOverflowMentions(soResults);
-            console.log(
-              `${tag} StackOverflow: ${soResults.length} questions, ${mentions.length} mentions in ${elapsed(sourceStart)}`
-            );
-            return { name: "stackoverflow" as const, mentions };
-          } catch (error) {
-            console.warn(`${tag} StackOverflow fetch failed after ${elapsed(sourceStart)}:`, error);
-            return { name: "stackoverflow" as const, mentions: [] };
-          }
-        })(),
-        (async () => {
-          const sourceStart = Date.now();
-          try {
-            const devto = new DevToClient();
-            const devtoResults = await searchSoftwareProductDevTo(devto, productName, {
-              articleLimit: 12,
-            });
-            const mentions = extractDevToMentions(devtoResults);
-            console.log(
-              `${tag} Dev.to: ${devtoResults.length} articles, ${mentions.length} mentions in ${elapsed(sourceStart)}`
-            );
-            return { name: "devto" as const, mentions };
-          } catch (error) {
-            console.warn(`${tag} Dev.to fetch failed after ${elapsed(sourceStart)}:`, error);
-            return { name: "devto" as const, mentions: [] };
-          }
-        })(),
-      ]);
+      // First pass with standard limits
+      const sourceResults = await fetchAllSources(productName, STANDARD_LIMITS, tag, elapsed);
 
       for (const { name, mentions } of sourceResults) {
         rawMentions.push(...mentions);
@@ -401,9 +446,27 @@ export const generateReport = action({
         }
       }
 
+      // Retry with expanded limits if we got too few mentions
+      if (rawMentions.length > 0 && rawMentions.length < MIN_MENTIONS_FOR_RELIABLE_SCORE) {
+        console.log(
+          `${tag} [1/6 COLLECT] Only ${rawMentions.length} mentions (below ${MIN_MENTIONS_FOR_RELIABLE_SCORE}) -- retrying with expanded search...`
+        );
+        const expandedResults = await fetchAllSources(productName, EXPANDED_LIMITS, tag, elapsed);
+        for (const { name, mentions } of expandedResults) {
+          rawMentions.push(...mentions);
+          if (mentions.length > 0 && !activeSourceNames.includes(name)) {
+            activeSourceNames.push(name);
+          }
+        }
+        console.log(
+          `${tag} [1/6 COLLECT] After expanded search: ${rawMentions.length} total raw mentions`
+        );
+      }
+
       const sourcesAnalyzed = activeSourceNames.length;
 
-      const failedSources = sourceResults.filter((s) => s.mentions.length === 0).map((s) => s.name);
+      const failedSources = (["reddit", "hackernews", "stackoverflow", "devto"] as const)
+        .filter((name) => !activeSourceNames.includes(name));
       console.log(
         `${tag} [1/6 COLLECT] Done in ${elapsed(stage1Start)} -- ` +
           `${rawMentions.length} raw mentions from ${sourcesAnalyzed}/4 sources` +
