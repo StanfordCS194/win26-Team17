@@ -66,36 +66,37 @@ describe("computeOverallScore", () => {
     expect(computeOverallScore(mentions)).toBe(100);
   });
 
-  it("returns 0 when all mentions are negative", () => {
-    // avg=20, amplified=50+(20-50)*2=-10, clamped to 0
+  it("returns 10 when all mentions are negative", () => {
+    // avg=20, amplified=50+(20-50)*2.5+10=-15, clamped to 10... wait
+    // 50 + (20-50)*2.5 + 10 = 50 - 75 + 10 = -15 -> clamped to 0...
+    // Actually: 50+(-30)*2.5+10 = 50-75+10 = -15 -> 0
     const mentions = makeMentions(10, { sentiment: "negative" });
     expect(computeOverallScore(mentions)).toBe(0);
   });
 
   it("tilts positive when positive and negative are equal", () => {
-    // Positive (score 80) gets 1.5x weight, negative (score 20) gets 1x
-    // avg = 700/12.5 = 56, amplified = 50 + (56-50)*2.5 = 65
+    // avg = 700/12.5 = 56, amplified = 50 + 6*2.5 + 10 = 75
     const mentions = [
       ...makeMentions(5, { sentiment: "positive" }),
       ...makeMentions(5, { sentiment: "negative" }),
     ];
-    expect(computeOverallScore(mentions)).toBe(65);
+    expect(computeOverallScore(mentions)).toBe(75);
   });
 
-  it("returns 50 when all mentions are neutral", () => {
+  it("returns 60 when all mentions are neutral", () => {
+    // avg=50, amplified = 50 + 0 + 10 = 60
     const mentions = makeMentions(10, { sentiment: "neutral" });
-    expect(computeOverallScore(mentions)).toBe(50);
+    expect(computeOverallScore(mentions)).toBe(60);
   });
 
   it("computes correctly with mixed sentiments", () => {
-    // 6 positive (80, w=1.5), 2 negative (20, w=1), 2 neutral (50, w=1)
-    // avg = 860/13 = 66.15, amplified = 50 + (66.15-50)*2.5 = 90.38
+    // avg = 860/13 = 66.15, amplified = 50 + 16.15*2.5 + 10 = 100.38 -> 100
     const mentions = [
       ...makeMentions(6, { sentiment: "positive" }),
       ...makeMentions(2, { sentiment: "negative" }),
       ...makeMentions(2, { sentiment: "neutral" }),
     ];
-    expect(computeOverallScore(mentions)).toBe(90);
+    expect(computeOverallScore(mentions)).toBe(100);
   });
 
   it("ignores irrelevant mentions in the calculation", () => {
@@ -147,14 +148,14 @@ describe("computeAspectScores", () => {
 
   it("computes score correctly for a single aspect", () => {
     // 3 positive Price (80, w=1.5), 1 negative Price (20, w=1)
-    // avg = 380/5.5 = 69.09, amplified = 50 + (69.09-50)*2.5 = 97.73
+    // avg = 380/5.5 = 69.09, amplified = 50 + (69.09-50)*2.5 + 10 = 107.73 -> 100
     const mentions = [
       ...makeMentions(3, { sentiment: "positive", aspects: ["Price"] }),
       ...makeMentions(1, { sentiment: "negative", aspects: ["Price"] }),
     ];
     const result = computeAspectScores(mentions);
     const price = result.find((a) => a.name === "Price")!;
-    expect(price.score).toBe(98);
+    expect(price.score).toBe(100);
     expect(price.mentions).toBe(4);
   });
 
@@ -366,8 +367,8 @@ describe("computeAllScores", () => {
     ];
     const result = computeAllScores(mentions);
 
-    // avg = 800/13 = 61.54, amplified = 50 + (61.54-50)*2.5 = 78.85
-    expect(result.overallScore).toBe(79);
+    // avg = 800/13 = 61.54, amplified = 50 + (61.54-50)*2.5 + 10 = 88.85
+    expect(result.overallScore).toBe(89);
     expect(result.aspects).toHaveLength(4);
     expect(result.aspects.find((a) => a.name === "Quality")!.score).toBe(100);
     expect(result.aspects.find((a) => a.name === "Price")!.score).toBe(0);

@@ -72,8 +72,9 @@ function amplifiedScore(mentions: ClassifiedMention[]): number {
     totalWeight += w;
   }
   const avg = weightedSum / totalWeight;
-  // LLM scores cluster around 50, so amplify deviation to use the full 0-100 range
-  return 50 + (avg - 50) * AMPLIFICATION;
+  // LLM scores cluster around 50, so amplify deviation to use the full 0-100 range.
+  // +10 offset compensates for selection bias in developer forums (people post when frustrated).
+  return 50 + (avg - 50) * AMPLIFICATION + 10;
 }
 
 /**
