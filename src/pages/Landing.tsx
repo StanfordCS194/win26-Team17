@@ -1,12 +1,13 @@
 import { BarChart2, ArrowRightLeft, ArrowRight, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 import Header from "@/components/Header";
+import HowItWorks from "@/components/HowItWorks";
 
 const Landing = () => {
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      <div className="min-h-[85vh] flex flex-col items-center justify-center px-4 pt-20">
+      <div className="flex flex-col items-center justify-center px-4 pt-28 pb-12">
         <div className="text-center max-w-3xl mx-auto">
           {/* Badge */}
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-accent/10 text-accent text-sm font-medium mb-8 animate-fade-up">
@@ -74,6 +75,8 @@ const Landing = () => {
           </div>
         </div>
       </div>
+
+      <HowItWorks />
     </div>
   );
 };
