@@ -58,7 +58,7 @@ const SearchHero = ({ onSearch, isLoading, sessionSearches, validationError }: S
   };
 
   return (
-    <div className="min-h-[85vh] flex flex-col items-center justify-center px-4 pt-20">
+    <div className="flex flex-col items-center justify-center px-4 pt-28 pb-12">
       <div className="text-center max-w-3xl mx-auto">
         {/* Badge */}
         <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-accent/10 text-accent text-sm font-medium mb-8 animate-fade-up">
