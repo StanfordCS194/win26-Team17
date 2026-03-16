@@ -15,7 +15,7 @@ export interface Insight {
 
 export interface AspectScore {
   name: string;
-  score: number;
+  score: number | null;
   mentions: number;
   trend: "up" | "down" | "stable";
 }
@@ -42,7 +42,7 @@ export interface ConfidenceIndicator {
 
 export interface ProductReport {
   productName: string;
-  overallScore: number;
+  overallScore: number | null;
   totalMentions: number;
   sourcesAnalyzed: number;
   sourceBreakdown: SourceInfo[];

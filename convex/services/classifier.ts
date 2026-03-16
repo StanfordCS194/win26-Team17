@@ -381,8 +381,8 @@ export async function synthesizeReport(
   productName: string,
   mentions: ClassifiedMention[],
   scores: {
-    overallScore: number;
-    aspects: Array<{ name: string; score: number; mentions: number }>;
+    overallScore: number | null;
+    aspects: Array<{ name: string; score: number | null; mentions: number }>;
     confidence?: { overall: number; coverage: number; agreement: number };
   }
 ): Promise<SynthesizedReport> {
@@ -416,9 +416,9 @@ export async function synthesizeReport(
 
   const prompt = `Analyze ${mentionSummaries.length} classified mentions about "${productName}".
 
-Overall score: ${scores.overallScore}/100
+Overall score: ${scores.overallScore !== null ? `${scores.overallScore}/100` : "Not enough data"}
 Sentiment distribution: ${sentimentDist.positive} positive, ${sentimentDist.neutral} neutral, ${sentimentDist.negative} negative
-Aspect scores: ${scores.aspects.map((a) => `${a.name}: ${a.score}/100 (${a.mentions} mentions)`).join(", ")}${scores.confidence ? `\nData confidence: ${Math.round(scores.confidence.overall * 100)}% (coverage: ${Math.round(scores.confidence.coverage * 100)}%, agreement: ${Math.round(scores.confidence.agreement * 100)}%)` : ""}
+Aspect scores: ${scores.aspects.map((a) => `${a.name}: ${a.score !== null ? `${a.score}/100` : "N/A"} (${a.mentions} mentions)`).join(", ")}${scores.confidence ? `\nData confidence: ${Math.round(scores.confidence.overall * 100)}% (coverage: ${Math.round(scores.confidence.coverage * 100)}%, agreement: ${Math.round(scores.confidence.agreement * 100)}%)` : ""}
 
 Classified mentions:
 ${JSON.stringify(mentionSummaries, null, 2)}

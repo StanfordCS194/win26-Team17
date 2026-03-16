@@ -30,7 +30,7 @@ export interface ClassifiedMention {
 
 export interface AspectScoreResult {
   name: string;
-  score: number;
+  score: number | null;
   mentions: number;
   trend: "up" | "down" | "stable";
 }
@@ -50,7 +50,7 @@ export interface ConfidenceIndicator {
 }
 
 export interface ScoringResult {
-  overallScore: number;
+  overallScore: number | null;
   aspects: AspectScoreResult[];
   issueRadar: IssueRadarItem[];
   confidence: ConfidenceIndicator;
@@ -83,9 +83,12 @@ function amplifiedScore(mentions: ClassifiedMention[]): number {
  * Deviations from neutral are amplified 2x so scores use the full 0-100 range.
  * Only counts mentions marked as relevant.
  */
-export function computeOverallScore(mentions: ClassifiedMention[]): number {
+/** Minimum relevant mentions required to produce a score. */
+const MIN_MENTIONS_FOR_SCORE = 3;
+
+export function computeOverallScore(mentions: ClassifiedMention[]): number | null {
   const relevant = mentions.filter((m) => m.classification.relevant);
-  if (relevant.length === 0) return 50;
+  if (relevant.length < MIN_MENTIONS_FOR_SCORE) return null;
 
   const score = amplifiedScore(relevant);
   return Math.round(Math.max(0, Math.min(100, score)));
@@ -97,7 +100,7 @@ export function computeOverallScore(mentions: ClassifiedMention[]): number {
 
 /**
  * Intensity-weighted aspect scores: average of sentimentScores for mentions
- * tagged with each aspect. Aspects with no mentions default to 50.
+ * tagged with each aspect. Aspects with no mentions return a null score.
  */
 export function computeAspectScores(
   mentions: ClassifiedMention[]
@@ -110,7 +113,7 @@ export function computeAspectScores(
     );
 
     if (aspectMentions.length === 0) {
-      return { name: aspect, score: 50, mentions: 0, trend: "stable" as const };
+      return { name: aspect, score: null, mentions: 0, trend: "stable" as const };
     }
 
     const score = amplifiedScore(aspectMentions);
@@ -147,7 +150,7 @@ export function computeIssueRadar(
       m.classification.aspects.includes(aspect)
     );
     const aspectScore =
-      aspectScores.find((a) => a.name === aspect)?.score ?? 50;
+      aspectScores.find((a) => a.name === aspect)?.score ?? 50; // fallback for radar calc only
 
     const score =
       (aspectMentions.length / totalMentions) * (100 - aspectScore);

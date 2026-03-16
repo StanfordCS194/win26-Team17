@@ -65,10 +65,14 @@ const RecentReports = ({ onSelect, isLoading }: RecentReportsProps) => {
                 </p>
               </div>
 
-              <div className={`flex items-center gap-1 ${getScoreColor(report.overallScore)}`}>
-                {getScoreIcon(report.overallScore)}
-                <span className="text-sm font-semibold">{report.overallScore}</span>
-              </div>
+              {report.overallScore !== null ? (
+                <div className={`flex items-center gap-1 ${getScoreColor(report.overallScore)}`}>
+                  {getScoreIcon(report.overallScore)}
+                  <span className="text-sm font-semibold">{report.overallScore}</span>
+                </div>
+              ) : (
+                <span className="text-xs text-muted-foreground italic">Limited data</span>
+              )}
             </div>
 
             <div className="flex items-center gap-2 mt-3 text-xs text-muted-foreground">

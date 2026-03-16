@@ -89,7 +89,7 @@ export const listRecentReports = query({
       .slice(0, limit)
       .map((r) => ({
         productName: r.productName,
-        overallScore: r.overallScore ?? 50,
+        overallScore: r.overallScore ?? null,
         totalMentions: r.totalMentions ?? 0,
         generatedAt: r.generatedAt,
         isExpired: r.generatedAt ? isReportExpired(r.generatedAt) : false,
@@ -109,9 +109,10 @@ export const getOverallScoreBaseline = query({
       .filter((q) => q.eq(q.field("status"), "complete"))
       .collect();
 
-    if (reports.length === 0) return null;
-    const sum = reports.reduce((acc, r) => acc + (r.overallScore ?? 50), 0);
-    return Math.round((sum / reports.length) * 10) / 10;
+    const scored = reports.filter((r) => r.overallScore != null);
+    if (scored.length === 0) return null;
+    const sum = scored.reduce((acc, r) => acc + r.overallScore!, 0);
+    return Math.round((sum / scored.length) * 10) / 10;
   },
 });
 
@@ -133,6 +134,7 @@ export const getAspectBaselines = query({
     for (const report of reports) {
       const aspects = report.aspects ?? [];
       for (const a of aspects) {
+        if (a.score == null) continue;
         const name = a.name;
         sumByAspect.set(name, (sumByAspect.get(name) ?? 0) + a.score);
         countByAspect.set(name, (countByAspect.get(name) ?? 0) + 1);

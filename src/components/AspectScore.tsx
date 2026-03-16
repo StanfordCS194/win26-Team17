@@ -3,7 +3,7 @@ import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface AspectScoreProps {
-  aspect: AspectScoreType;
+  aspect: AspectScoreType & { score: number };
   index: number;
   /** Average score for this aspect across all products (baseline for comparison) */
   baselineAverage?: number;

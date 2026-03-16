@@ -51,13 +51,18 @@ function makeMentions(
 // ============================================================================
 
 describe("computeOverallScore", () => {
-  it("returns 50 for empty mentions", () => {
-    expect(computeOverallScore([])).toBe(50);
+  it("returns null for empty mentions", () => {
+    expect(computeOverallScore([])).toBeNull();
   });
 
-  it("returns 50 when all mentions are irrelevant", () => {
+  it("returns null when all mentions are irrelevant", () => {
     const mentions = makeMentions(5, { relevant: false, sentiment: "positive" });
-    expect(computeOverallScore(mentions)).toBe(50);
+    expect(computeOverallScore(mentions)).toBeNull();
+  });
+
+  it("returns null when fewer than 3 relevant mentions", () => {
+    const mentions = makeMentions(2, { sentiment: "positive" });
+    expect(computeOverallScore(mentions)).toBeNull();
   });
 
   it("returns 100 when all mentions are positive", () => {
@@ -109,20 +114,20 @@ describe("computeOverallScore", () => {
   });
 
   it("distinguishes strong vs weak positive", () => {
-    const strong = [
-      { ...makeMention({ sentiment: "positive" }), classification: { sentiment: "positive" as const, sentimentScore: 95, aspects: [] as const, relevant: true } },
-    ];
-    const weak = [
-      { ...makeMention({ sentiment: "positive" }), classification: { sentiment: "positive" as const, sentimentScore: 60, aspects: [] as const, relevant: true } },
-    ];
-    expect(computeOverallScore(strong)).toBeGreaterThan(computeOverallScore(weak));
+    const strong = Array.from({ length: 3 }, (_, i) => ({
+      ...makeMention({ sentiment: "positive", author: `s${i}` }),
+      classification: { sentiment: "positive" as const, sentimentScore: 95, aspects: [] as Aspect[], relevant: true },
+    }));
+    const weak = Array.from({ length: 3 }, (_, i) => ({
+      ...makeMention({ sentiment: "positive", author: `w${i}` }),
+      classification: { sentiment: "positive" as const, sentimentScore: 60, aspects: [] as Aspect[], relevant: true },
+    }));
+    expect(computeOverallScore(strong)!).toBeGreaterThan(computeOverallScore(weak)!);
   });
 
   it("clamps to 0-100 range", () => {
-    // All positive -> should be exactly 100, not above
-    expect(computeOverallScore(makeMentions(1, { sentiment: "positive" }))).toBeLessThanOrEqual(100);
-    // All negative -> should be exactly 0, not below
-    expect(computeOverallScore(makeMentions(1, { sentiment: "negative" }))).toBeGreaterThanOrEqual(0);
+    expect(computeOverallScore(makeMentions(3, { sentiment: "positive" }))).toBeLessThanOrEqual(100);
+    expect(computeOverallScore(makeMentions(3, { sentiment: "negative" }))).toBeGreaterThanOrEqual(0);
   });
 });
 
@@ -137,10 +142,10 @@ describe("computeAspectScores", () => {
     expect(result.map((a) => a.name)).toEqual(["Price", "Quality", "Durability", "Usability"]);
   });
 
-  it("returns score 50 and 0 mentions for aspects with no data", () => {
+  it("returns null score and 0 mentions for aspects with no data", () => {
     const result = computeAspectScores([]);
     for (const aspect of result) {
-      expect(aspect.score).toBe(50);
+      expect(aspect.score).toBeNull();
       expect(aspect.mentions).toBe(0);
       expect(aspect.trend).toBe("stable");
     }
@@ -167,7 +172,7 @@ describe("computeAspectScores", () => {
     const result = computeAspectScores(mentions);
     expect(result.find((a) => a.name === "Quality")!.score).toBe(100);
     expect(result.find((a) => a.name === "Price")!.score).toBe(0);
-    expect(result.find((a) => a.name === "Durability")!.score).toBe(50);
+    expect(result.find((a) => a.name === "Durability")!.score).toBeNull();
   });
 
   it("handles mentions tagged with multiple aspects", () => {

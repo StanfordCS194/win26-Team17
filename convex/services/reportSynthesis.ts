@@ -160,39 +160,41 @@ function buildInsights(
     }));
 }
 
-function describeOverallSentiment(overallScore: number): string {
-  if (overallScore >= 65) {
-    return "predominantly positive";
-  }
-  if (overallScore <= 35) {
-    return "predominantly negative";
-  }
+function describeOverallSentiment(overallScore: number | null): string {
+  if (overallScore === null) return "undetermined (not enough data)";
+  if (overallScore >= 65) return "predominantly positive";
+  if (overallScore <= 35) return "predominantly negative";
   return "mixed";
 }
 
 function pickBestAspect(
-  aspects: Array<{ name: string; score: number; mentions: number }>,
+  aspects: Array<{ name: string; score: number | null; mentions: number }>,
   direction: "highest" | "lowest"
 ): { name: string; score: number; mentions: number } | null {
-  const mentionedAspects = aspects.filter((aspect) => aspect.mentions > 0);
-  if (mentionedAspects.length === 0) {
+  const scoredAspects = aspects.filter(
+    (aspect): aspect is { name: string; score: number; mentions: number } =>
+      aspect.score !== null && aspect.mentions > 0
+  );
+  if (scoredAspects.length === 0) {
     return null;
   }
 
-  return [...mentionedAspects].sort((left, right) =>
+  return [...scoredAspects].sort((left, right) =>
     direction === "highest" ? right.score - left.score : left.score - right.score
   )[0];
 }
 
 function buildSummary(
   productName: string,
-  overallScore: number,
-  aspects: Array<{ name: string; score: number; mentions: number }>,
+  overallScore: number | null,
+  aspects: Array<{ name: string; score: number | null; mentions: number }>,
   strengths: ReportInsight[],
   issues: ReportInsight[]
 ): string {
   const sentences = [
-    `Overall sentiment for ${productName} is ${describeOverallSentiment(overallScore)}, with a score of ${overallScore}/100.`,
+    overallScore !== null
+      ? `Overall sentiment for ${productName} is ${describeOverallSentiment(overallScore)}, with a score of ${overallScore}/100.`
+      : `Not enough data to determine overall sentiment for ${productName}.`,
   ];
 
   if (strengths[0] && issues[0]) {
@@ -230,8 +232,8 @@ export function synthesizeReportDeterministically(
   productName: string,
   mentions: ClassifiedMention[],
   scores: {
-    overallScore: number;
-    aspects: Array<{ name: string; score: number; mentions: number }>;
+    overallScore: number | null;
+    aspects: Array<{ name: string; score: number | null; mentions: number }>;
   }
 ): SynthesizedReport {
   const relevantMentions = mentions.filter((mention) => mention.classification.relevant);

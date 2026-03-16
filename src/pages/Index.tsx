@@ -199,7 +199,7 @@ const Index = () => {
   // Convert Convex report to ProductReport type (handle optional fields)
   const toProductReport = (r: NonNullable<typeof report>): ProductReport => ({
     productName: r.productName,
-    overallScore: r.overallScore ?? 50,
+    overallScore: r.overallScore ?? null,
     totalMentions: r.totalMentions ?? 0,
     sourcesAnalyzed: r.sourcesAnalyzed ?? 1,
     sourceBreakdown: r.sourceBreakdown ?? [],
