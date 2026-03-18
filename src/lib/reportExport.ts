@@ -190,7 +190,7 @@ function drawAspectCard(
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   doc.setTextColor(100, 116, 139);
-  doc.text("/ 100", x + padding + doc.getTextWidth(String(aspect.score)) + 2, cy);
+  doc.text("/ 100", x + padding + doc.getTextWidth(String(aspect.score)) + 5, cy);
   doc.setTextColor(0, 0, 0);
   cy += PDF_LINE_HEIGHT;
 
