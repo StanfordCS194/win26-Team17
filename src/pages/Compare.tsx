@@ -5,10 +5,22 @@ import { api } from "../../convex/_generated/api";
 import Header from "@/components/Header";
 import ScoreGauge from "@/components/ScoreGauge";
 import { CompareCharts } from "@/components/CompareCharts";
-import { ProductReport } from "@/types/report";
+import { ProductReport, Quote as QuoteType } from "@/types/report";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, ArrowRightLeft, Loader2, RefreshCw } from "lucide-react";
+import {
+  Search,
+  ArrowRightLeft,
+  Loader2,
+  RefreshCw,
+  CheckCircle2,
+  FileText,
+  Tags,
+  BarChart3,
+  Activity,
+  Quote as QuoteIcon,
+  ExternalLink,
+} from "lucide-react";
 import { Link } from "react-router-dom";
 
 const MIN_LENGTH = 2;
@@ -43,6 +55,61 @@ const toProductReport = (r: {
   issueRadar: r.issueRadar ?? [],
   confidence: r.confidence,
 });
+
+const sourceLabel: Record<string, string> = {
+  reddit: "Reddit",
+  hackernews: "Hacker News",
+  stackoverflow: "Stack Overflow",
+  devto: "Dev.to",
+};
+
+function pickExampleQuote(report: ProductReport): QuoteType | null {
+  for (const insight of [...report.strengths, ...report.issues]) {
+    if (insight.quotes.length > 0) return insight.quotes[0];
+  }
+  return null;
+}
+
+const pipelineStepLabel: Record<string, { icon: typeof Search; label: string }> = {
+  pending: { icon: Search, label: "Starting analysis..." },
+  fetching: { icon: FileText, label: "Fetching discussions..." },
+  classifying: { icon: Tags, label: "Classifying mentions..." },
+  analyzing: { icon: BarChart3, label: "Computing scores..." },
+};
+
+const AreaStatusBadge = ({
+  status,
+  pipelineStatus,
+  productName,
+}: {
+  status: AreaStatus;
+  pipelineStatus?: string;
+  productName: string;
+}) => {
+  if (status === "ready") {
+    return (
+      <div className="flex items-center gap-2 mt-3 p-2.5 rounded-lg bg-pulse-positive/10 border border-pulse-positive/20">
+        <CheckCircle2 className="w-5 h-5 text-pulse-positive flex-shrink-0" />
+        <span className="text-sm font-medium text-pulse-positive">
+          {productName} — ready
+        </span>
+      </div>
+    );
+  }
+
+  if (status === "loading") {
+    const step = pipelineStepLabel[pipelineStatus ?? "pending"] ?? pipelineStepLabel.pending;
+    const StepIcon = step.icon;
+    return (
+      <div className="flex items-center gap-2 mt-3 p-2.5 rounded-lg bg-accent/10 border border-accent/20">
+        <StepIcon className="w-5 h-5 text-accent animate-pulse flex-shrink-0" />
+        <span className="text-sm font-medium text-foreground">{step.label}</span>
+      </div>
+    );
+  }
+
+  return null;
+};
 
 const Compare = () => {
   const [area1Query, setArea1Query] = useState("");
@@ -217,6 +284,11 @@ const Compare = () => {
               {area1Error && (
                 <p className="mt-2 text-sm text-destructive">{area1Error}</p>
               )}
+              <AreaStatusBadge
+                status={area1Status}
+                pipelineStatus={report1?.status}
+                productName={area1Query}
+              />
             </div>
 
             {/* Area 2 */}
@@ -276,6 +348,11 @@ const Compare = () => {
               {area2Error && (
                 <p className="mt-2 text-sm text-destructive">{area2Error}</p>
               )}
+              <AreaStatusBadge
+                status={area2Status}
+                pipelineStatus={report2?.status}
+                productName={area2Query}
+              />
             </div>
           </div>
 
@@ -330,6 +407,61 @@ const Compare = () => {
                   </p>
                 </div>
               </div>
+
+              {/* Example sources */}
+              {(() => {
+                const q1 = pickExampleQuote(r1);
+                const q2 = pickExampleQuote(r2);
+                if (!q1 && !q2) return null;
+                return (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {[
+                      { report: r1, quote: q1 },
+                      { report: r2, quote: q2 },
+                    ].map(({ report, quote }) => (
+                      <div
+                        key={report.productName}
+                        className="bg-card rounded-xl border border-border p-5"
+                      >
+                        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-1.5">
+                          <QuoteIcon className="w-4 h-4" />
+                          Example source — {report.productName}
+                        </h3>
+                        {quote ? (
+                          <div>
+                            <blockquote className="text-foreground text-sm leading-relaxed italic border-l-2 border-accent/40 pl-3 mb-3 line-clamp-4">
+                              &ldquo;{quote.text}&rdquo;
+                            </blockquote>
+                            <div className="flex items-center justify-between text-xs text-muted-foreground">
+                              <span>
+                                {quote.author} on{" "}
+                                <span className="font-medium">
+                                  {sourceLabel[quote.source] ?? quote.source}
+                                </span>
+                              </span>
+                              {quote.url && (
+                                <a
+                                  href={quote.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-accent hover:underline"
+                                >
+                                  View source
+                                  <ExternalLink className="w-3 h-3" />
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-muted-foreground italic">
+                            No example quotes available
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
 
               {/* Aspect comparison table */}
               {allAspectNames.length > 0 && (
@@ -440,15 +572,107 @@ const Compare = () => {
             </div>
           )}
 
-          {!canCompare && (area1Query || area2Query) && (
-            <p className="text-center text-muted-foreground py-8">
-              Run analysis for both areas to see the comparison. You can also{" "}
-              <Link to="/" className="text-accent hover:underline">
-                analyze a single product
-              </Link>{" "}
-              from the home page.
-            </p>
-          )}
+          {/* Combined loading view: both queried, at least one still loading */}
+          {!canCompare &&
+            area1Status !== "idle" &&
+            area2Status !== "idle" &&
+            (area1Status === "loading" || area2Status === "loading") && (
+              <div className="flex flex-col items-center justify-center py-16 animate-fade-up">
+                <div className="relative mb-8">
+                  <div className="w-20 h-20 rounded-2xl gradient-accent flex items-center justify-center mx-auto shadow-glow animate-pulse-ring">
+                    <Activity className="w-10 h-10 text-accent-foreground" />
+                  </div>
+                  <div className="absolute inset-0 w-20 h-20 rounded-2xl gradient-accent opacity-30 blur-xl mx-auto" />
+                </div>
+
+                <h2 className="text-2xl font-bold text-foreground mb-2">
+                  Preparing comparison
+                </h2>
+                <p className="text-muted-foreground mb-8">
+                  Analyzing both products so we can compare them side by side...
+                </p>
+
+                <div className="w-full max-w-sm space-y-4">
+                  {[
+                    { query: area1Query, status: area1Status, report: report1 },
+                    { query: area2Query, status: area2Status, report: report2 },
+                  ].map(({ query, status, report }) => {
+                    const isReady = status === "ready";
+                    const step =
+                      pipelineStepLabel[report?.status ?? "pending"] ??
+                      pipelineStepLabel.pending;
+                    const StepIcon = step.icon;
+                    return (
+                      <div
+                        key={query}
+                        className={`flex items-center gap-3 p-3.5 rounded-xl border transition-all duration-300 ${
+                          isReady
+                            ? "bg-pulse-positive/10 border-pulse-positive/20"
+                            : "bg-accent/5 border-accent/15"
+                        }`}
+                      >
+                        {isReady ? (
+                          <CheckCircle2 className="w-6 h-6 text-pulse-positive flex-shrink-0" />
+                        ) : (
+                          <StepIcon className="w-6 h-6 text-accent animate-pulse flex-shrink-0" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-foreground truncate">
+                            {query}
+                          </p>
+                          <p
+                            className={`text-xs ${
+                              isReady
+                                ? "text-pulse-positive"
+                                : "text-muted-foreground"
+                            }`}
+                          >
+                            {isReady ? "Ready" : step.label}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="w-full max-w-sm mt-8">
+                  <div className="w-full bg-secondary rounded-full h-2 overflow-hidden">
+                    <div
+                      className="h-full gradient-accent transition-all duration-500 ease-out"
+                      style={{
+                        width: `${
+                          area1Status === "ready" && area2Status === "ready"
+                            ? 100
+                            : area1Status === "ready" || area2Status === "ready"
+                              ? 65
+                              : 30
+                        }%`,
+                      }}
+                    />
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-2 text-center">
+                    This may take 30–60 seconds
+                  </p>
+                </div>
+              </div>
+            )}
+
+          {/* Prompt to run both when only one is queried or idle */}
+          {!canCompare &&
+            !(
+              area1Status !== "idle" &&
+              area2Status !== "idle" &&
+              (area1Status === "loading" || area2Status === "loading")
+            ) &&
+            (area1Query || area2Query) && (
+              <p className="text-center text-muted-foreground py-8">
+                Run analysis for both areas to see the comparison. You can also{" "}
+                <Link to="/" className="text-accent hover:underline">
+                  analyze a single product
+                </Link>{" "}
+                from the home page.
+              </p>
+            )}
         </div>
       </div>
     </div>
