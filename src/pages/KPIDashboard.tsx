@@ -2,6 +2,27 @@ import { useState, useEffect } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 
+type TargetStatus = "on-track" | "needs-attention" | "no-data";
+
+function TargetBadge({ status, label }: { status: TargetStatus; label: string }) {
+  const styles: Record<TargetStatus, string> = {
+    "on-track": "bg-green-100 text-green-800 border border-green-200",
+    "needs-attention": "bg-yellow-100 text-yellow-800 border border-yellow-200",
+    "no-data": "bg-muted text-muted-foreground border border-border",
+  };
+  return (
+    <span className={`ml-2 text-xs font-medium px-2 py-0.5 rounded-full ${styles[status]}`}>
+      {label}
+    </span>
+  );
+}
+
+function getStatus(value: number, target: number, direction: "gte" | "lte", hasData: boolean): TargetStatus {
+  if (!hasData) return "no-data";
+  if (direction === "gte") return value >= target ? "on-track" : "needs-attention";
+  return value <= target ? "on-track" : "needs-attention";
+}
+
 const KPIDashboard = () => {
   const data = useQuery(api.analytics.getKPIDashboard);
   const [lastViewed, setLastViewed] = useState<string>("");
@@ -42,8 +63,12 @@ const KPIDashboard = () => {
         </div>
 
         <section className="bg-card rounded-lg border border-border p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-foreground mb-4">
+          <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center">
             Report Completion Rate
+            <TargetBadge
+              status={getStatus(data.completionRate, 80, "gte", data.totalSearches > 0)}
+              label={data.totalSearches > 0 ? `Target: 80%+` : "No data"}
+            />
           </h2>
           <ul className="space-y-2 text-sm">
             <li>
@@ -62,8 +87,12 @@ const KPIDashboard = () => {
         </section>
 
         <section className="bg-card rounded-lg border border-border p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-foreground mb-4">
+          <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center">
             Time to Insight
+            <TargetBadge
+              status={getStatus(data.averageTimeToInsightMinutes, 5, "lte", data.totalSessionsMeasured > 0)}
+              label={data.totalSessionsMeasured > 0 ? "Target: <5 min" : "No data"}
+            />
           </h2>
           <ul className="space-y-2 text-sm">
             <li>
@@ -83,8 +112,12 @@ const KPIDashboard = () => {
         </section>
 
         <section className="bg-card rounded-lg border border-border p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-foreground mb-4">
+          <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center">
             Source Coverage
+            <TargetBadge
+              status={getStatus(data.averageSourcesAnalyzed, 2, "gte", data.reportsWithTwoOrMoreSources > 0 || data.averageSourcesAnalyzed > 0)}
+              label="Target: 2+ sources"
+            />
           </h2>
           <ul className="space-y-2 text-sm">
             <li>
@@ -107,8 +140,12 @@ const KPIDashboard = () => {
         </section>
 
         <section className="bg-card rounded-lg border border-border p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-foreground mb-4">
+          <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center">
             Evidence Engagement
+            <TargetBadge
+              status={getStatus(data.evidenceEngagementRate, 60, "gte", data.totalDashboardSessions > 0)}
+              label={data.totalDashboardSessions > 0 ? "Target: 60%+" : "No data"}
+            />
           </h2>
           <ul className="space-y-2 text-sm">
             <li>
@@ -137,8 +174,12 @@ const KPIDashboard = () => {
         </section>
 
         <section className="bg-card rounded-lg border border-border p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-foreground mb-4">
+          <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center">
             Insight Defensibility Score
+            <TargetBadge
+              status={getStatus(data.defensibilityAverage, 4, "gte", data.defensibilityCount > 0)}
+              label={data.defensibilityCount > 0 ? "Target: 4/5" : "No data"}
+            />
           </h2>
           <ul className="space-y-2 text-sm">
             <li>
@@ -185,8 +226,12 @@ const KPIDashboard = () => {
         </section>
 
         <section className="bg-card rounded-lg border border-border p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-foreground mb-4">
+          <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center">
             Return Usage Rate
+            <TargetBadge
+              status={getStatus(data.returnUsageRate, 40, "gte", data.totalSessionsWithOneSearch > 0)}
+              label={data.totalSessionsWithOneSearch > 0 ? "Target: 40%+" : "No data"}
+            />
           </h2>
           <ul className="space-y-2 text-sm">
             <li>
