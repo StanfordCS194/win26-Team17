@@ -9,6 +9,7 @@ import SearchHero from "@/components/SearchHero";
 import LoadingState from "@/components/LoadingState";
 import Dashboard from "@/components/Dashboard";
 import ErrorState from "@/components/ErrorState";
+import RecentReports from "@/components/RecentReports";
 import { ProductReport } from "@/types/report";
 
 type ViewState = "search" | "loading" | "dashboard" | "error";
@@ -217,7 +218,15 @@ const Index = () => {
       <Header />
 
       {view === "search" && (
-        <SearchHero onSearch={handleSearch} isLoading={isAnalyzing} sessionSearches={sessionSearches} validationError={validationError} />
+        <>
+          <SearchHero onSearch={handleSearch} isLoading={isAnalyzing} sessionSearches={sessionSearches} validationError={validationError} />
+          <div className="max-w-3xl mx-auto px-4 pb-16">
+            <p className="text-center text-sm text-muted-foreground mb-6">
+              Not sure where to start? Browse a recently analyzed product below.
+            </p>
+            <RecentReports onSelect={handleSearch} isLoading={isAnalyzing} />
+          </div>
+        </>
       )}
 
       {view === "loading" && (
