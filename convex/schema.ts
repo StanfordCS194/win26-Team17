@@ -18,7 +18,7 @@ const insightValidator = v.object({
 
 const aspectScoreValidator = v.object({
   name: v.string(),
-  score: v.number(),
+  score: v.optional(v.number()),
   mentions: v.number(),
   trend: v.union(v.literal("up"), v.literal("down"), v.literal("stable")),
 });

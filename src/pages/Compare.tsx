@@ -31,7 +31,7 @@ const toProductReport = (r: {
   confidence?: ProductReport["confidence"];
 }): ProductReport => ({
   productName: r.productName,
-  overallScore: r.overallScore ?? 50,
+  overallScore: r.overallScore ?? null,
   totalMentions: r.totalMentions ?? 0,
   sourcesAnalyzed: r.sourcesAnalyzed ?? 1,
   sourceBreakdown: r.sourceBreakdown ?? [],
@@ -286,11 +286,19 @@ const Compare = () => {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="bg-card rounded-2xl border border-border p-6 flex flex-col items-center">
                   <p className="text-sm font-medium text-muted-foreground mb-2">{r1.productName}</p>
-                  <ScoreGauge score={r1.overallScore} size="lg" label="Overall sentiment" />
+                  {r1.overallScore !== null ? (
+                    <ScoreGauge score={r1.overallScore} size="lg" label="Overall sentiment" />
+                  ) : (
+                    <p className="text-sm text-muted-foreground py-4">Not enough data for an overall score</p>
+                  )}
                 </div>
                 <div className="bg-card rounded-2xl border border-border p-6 flex flex-col items-center">
                   <p className="text-sm font-medium text-muted-foreground mb-2">{r2.productName}</p>
-                  <ScoreGauge score={r2.overallScore} size="lg" label="Overall sentiment" />
+                  {r2.overallScore !== null ? (
+                    <ScoreGauge score={r2.overallScore} size="lg" label="Overall sentiment" />
+                  ) : (
+                    <p className="text-sm text-muted-foreground py-4">Not enough data for an overall score</p>
+                  )}
                 </div>
               </div>
 

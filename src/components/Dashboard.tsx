@@ -205,15 +205,23 @@ const Dashboard = ({ report, reportId, onBack, onRefresh, isRefreshing }: Dashbo
 
             {/* Overall Score */}
             <div className="flex-shrink-0">
-              <ScoreGauge
-                score={report.overallScore}
-                size="lg"
-                label="Overall Sentiment"
-              />
-              {overallScoreBaseline !== undefined && overallScoreBaseline !== null && (
-                <p className="text-sm text-muted-foreground mt-2 text-center">
-                  Avg score across all searches:{" "}
-                  <span className="font-medium text-foreground">{overallScoreBaseline}</span>
+              {report.overallScore !== null ? (
+                <>
+                  <ScoreGauge
+                    score={report.overallScore}
+                    size="lg"
+                    label="Overall Sentiment"
+                  />
+                  {overallScoreBaseline !== undefined && overallScoreBaseline !== null && (
+                    <p className="text-sm text-muted-foreground mt-2 text-center">
+                      Avg score across all searches:{" "}
+                      <span className="font-medium text-foreground">{overallScoreBaseline}</span>
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center">
+                  Not enough data to<br />calculate overall score
                 </p>
               )}
             </div>
@@ -257,16 +265,34 @@ const Dashboard = ({ report, reportId, onBack, onRefresh, isRefreshing }: Dashbo
           <h2 className="text-xl font-bold text-foreground mb-4">
             Aspect Analysis
           </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {report.aspects.map((aspect, index) => (
-              <AspectScoreCard
-                key={aspect.name}
-                aspect={aspect}
-                index={index}
-                baselineAverage={aspectBaselines?.[aspect.name]}
-              />
-            ))}
-          </div>
+          {(() => {
+            const scored = report.aspects.filter((a) => a.score !== null) as Array<typeof report.aspects[number] & { score: number }>;
+            const missing = report.aspects.filter((a) => a.score === null);
+            return (
+              <>
+                {scored.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    {scored.map((aspect, index) => (
+                      <AspectScoreCard
+                        key={aspect.name}
+                        aspect={aspect}
+                        index={index}
+                        baselineAverage={aspectBaselines?.[aspect.name]}
+                      />
+                    ))}
+                  </div>
+                )}
+                {missing.length > 0 && (
+                  <p className="text-sm text-muted-foreground mt-4">
+                    Not enough data for {missing.map((a) => a.name).join(", ")}.
+                  </p>
+                )}
+                {scored.length === 0 && missing.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No aspect data available.</p>
+                )}
+              </>
+            );
+          })()}
         </section>
 
         {/* Confidence & Issue Radar */}

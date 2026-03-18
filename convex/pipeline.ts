@@ -315,7 +315,7 @@ export const updateReportStatus = internalMutation({
 export const saveReportResults = internalMutation({
   args: {
     reportId: v.id("productReports"),
-    overallScore: v.number(),
+    overallScore: v.optional(v.number()),
     totalMentions: v.number(),
     sourcesAnalyzed: v.number(),
     summary: v.string(),
@@ -354,7 +354,7 @@ export const saveReportResults = internalMutation({
     aspects: v.array(
       v.object({
         name: v.string(),
-        score: v.number(),
+        score: v.optional(v.number()),
         mentions: v.number(),
         trend: v.union(v.literal("up"), v.literal("down"), v.literal("stable")),
       })
@@ -620,13 +620,16 @@ export const generateReport = action({
 
       await ctx.runMutation(internal.pipeline.saveReportResults, {
         reportId,
-        overallScore: scores.overallScore,
+        overallScore: scores.overallScore ?? undefined,
         totalMentions: classifiedMentions.length,
         sourcesAnalyzed: Math.max(sourcesAnalyzed, 1),
         summary: report.summary,
         strengths: report.strengths,
         issues: report.issues,
-        aspects: scores.aspects,
+        aspects: scores.aspects.map((a) => ({
+          ...a,
+          score: a.score ?? undefined,
+        })),
         sourceBreakdown,
         issueRadar: scores.issueRadar,
         confidence: scores.confidence,

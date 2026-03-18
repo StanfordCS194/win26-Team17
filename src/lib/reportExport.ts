@@ -100,14 +100,21 @@ function drawHeaderCard(
 
   // Right: Overall Sentiment circle (like ScoreGauge)
   const circleCenterX = PDF_MARGIN + contentWidth - padding - 18;
-  const colors = getScoreColors(report.overallScore);
-  doc.setFillColor(...colors.fill);
-  doc.setDrawColor(200, 200, 200);
-  doc.circle(circleCenterX, circleCenterY, circleRadius, "FD");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(14);
-  doc.setTextColor(...colors.text);
-  doc.text(String(report.overallScore), circleCenterX, circleCenterY + 1.5, { align: "center" });
+  if (report.overallScore !== null) {
+    const colors = getScoreColors(report.overallScore);
+    doc.setFillColor(...colors.fill);
+    doc.setDrawColor(200, 200, 200);
+    doc.circle(circleCenterX, circleCenterY, circleRadius, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.setTextColor(...colors.text);
+    doc.text(String(report.overallScore), circleCenterX, circleCenterY + 1.5, { align: "center" });
+  } else {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    doc.text("Not enough data", circleCenterX, circleCenterY + 1.5, { align: "center" });
+  }
   doc.setTextColor(0, 0, 0);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
@@ -152,7 +159,7 @@ function getTrendLabel(trend: "up" | "down" | "stable"): string {
 
 function drawAspectCard(
   doc: jsPDF,
-  aspect: AspectScore,
+  aspect: AspectScore & { score: number },
   x: number,
   y: number,
   w: number,
@@ -492,18 +499,29 @@ export function exportReportToPdf(report: ProductReport): void {
   doc.setFont("helvetica", "normal");
   y += PDF_LINE_HEIGHT * 1.5;
   const aspectCardW = (contentWidth - gap) / 2;
-  const aspects = report.aspects ?? [];
-  for (let i = 0; i < aspects.length; i += 2) {
+  const allAspects = report.aspects ?? [];
+  const scoredAspects = allAspects.filter(
+    (a): a is AspectScore & { score: number } => a.score !== null
+  );
+  const missingAspects = allAspects.filter((a) => a.score === null);
+  for (let i = 0; i < scoredAspects.length; i += 2) {
     if (y > PDF_PAGE_HEIGHT - 40) {
       doc.addPage();
       addPulseCheckHeader(doc, pageWidth);
       y = PDF_MARGIN;
     }
-    const leftY = drawAspectCard(doc, aspects[i], PDF_MARGIN, y, aspectCardW, aspectPadding);
-    if (i + 1 < aspects.length) {
-      drawAspectCard(doc, aspects[i + 1], PDF_MARGIN + aspectCardW + gap, y, aspectCardW, aspectPadding);
+    const leftY = drawAspectCard(doc, scoredAspects[i], PDF_MARGIN, y, aspectCardW, aspectPadding);
+    if (i + 1 < scoredAspects.length) {
+      drawAspectCard(doc, scoredAspects[i + 1], PDF_MARGIN + aspectCardW + gap, y, aspectCardW, aspectPadding);
     }
     y = Math.max(leftY, y + 32) + 4;
+  }
+  if (missingAspects.length > 0) {
+    doc.setFontSize(9);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Not enough data for: ${missingAspects.map((a) => a.name).join(", ")}`, PDF_MARGIN, y);
+    doc.setTextColor(0, 0, 0);
+    y += PDF_LINE_HEIGHT;
   }
   y += 4;
 
@@ -582,7 +600,7 @@ export function exportReportToExcel(report: ProductReport): void {
 
   const aspectSummary =
     (report.aspects ?? [])
-      .map((a) => `${a.name}: ${a.score}`)
+      .map((a) => `${a.name}: ${a.score ?? "N/A"}`)
       .join("  |  ") || "—";
   const sourceSummary =
     (report.sourceBreakdown ?? [])
@@ -596,7 +614,7 @@ export function exportReportToExcel(report: ProductReport): void {
     ["Product Intelligence Report", ""],
     ["Product", report.productName],
     ["Generated", new Date(report.generatedAt).toLocaleString()],
-    ["Overall Score (0–100)", report.overallScore],
+    ["Overall Score (0-100)", report.overallScore ?? "Not enough data"],
     ["Total Mentions Analyzed", report.totalMentions],
     ["Sources Analyzed", report.sourcesAnalyzed],
     ["Aspect Scores (by dimension)", aspectSummary],
@@ -620,7 +638,7 @@ export function exportReportToExcel(report: ProductReport): void {
 
   const aspectData = [
     ["Aspect", "Score (0–100)", "Mentions", "Trend"],
-    ...(report.aspects ?? []).map((a) => [a.name, a.score, a.mentions, a.trend]),
+    ...(report.aspects ?? []).map((a) => [a.name, a.score ?? "Not enough data", a.mentions, a.trend]),
   ];
   XLSX.utils.book_append_sheet(
     wb,
