@@ -5,7 +5,7 @@ import { api } from "../../convex/_generated/api";
 import Header from "@/components/Header";
 import ScoreGauge from "@/components/ScoreGauge";
 import { CompareCharts } from "@/components/CompareCharts";
-import { ProductReport } from "@/types/report";
+import { ProductReport, Quote as QuoteType } from "@/types/report";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -18,6 +18,8 @@ import {
   Tags,
   BarChart3,
   Activity,
+  Quote as QuoteIcon,
+  ExternalLink,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -53,6 +55,20 @@ const toProductReport = (r: {
   issueRadar: r.issueRadar ?? [],
   confidence: r.confidence,
 });
+
+const sourceLabel: Record<string, string> = {
+  reddit: "Reddit",
+  hackernews: "Hacker News",
+  stackoverflow: "Stack Overflow",
+  devto: "Dev.to",
+};
+
+function pickExampleQuote(report: ProductReport): QuoteType | null {
+  for (const insight of [...report.strengths, ...report.issues]) {
+    if (insight.quotes.length > 0) return insight.quotes[0];
+  }
+  return null;
+}
 
 const pipelineStepLabel: Record<string, { icon: typeof Search; label: string }> = {
   pending: { icon: Search, label: "Starting analysis..." },
@@ -391,6 +407,61 @@ const Compare = () => {
                   </p>
                 </div>
               </div>
+
+              {/* Example sources */}
+              {(() => {
+                const q1 = pickExampleQuote(r1);
+                const q2 = pickExampleQuote(r2);
+                if (!q1 && !q2) return null;
+                return (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {[
+                      { report: r1, quote: q1 },
+                      { report: r2, quote: q2 },
+                    ].map(({ report, quote }) => (
+                      <div
+                        key={report.productName}
+                        className="bg-card rounded-xl border border-border p-5"
+                      >
+                        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-1.5">
+                          <QuoteIcon className="w-4 h-4" />
+                          Example source — {report.productName}
+                        </h3>
+                        {quote ? (
+                          <div>
+                            <blockquote className="text-foreground text-sm leading-relaxed italic border-l-2 border-accent/40 pl-3 mb-3 line-clamp-4">
+                              &ldquo;{quote.text}&rdquo;
+                            </blockquote>
+                            <div className="flex items-center justify-between text-xs text-muted-foreground">
+                              <span>
+                                {quote.author} on{" "}
+                                <span className="font-medium">
+                                  {sourceLabel[quote.source] ?? quote.source}
+                                </span>
+                              </span>
+                              {quote.url && (
+                                <a
+                                  href={quote.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-accent hover:underline"
+                                >
+                                  View source
+                                  <ExternalLink className="w-3 h-3" />
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-muted-foreground italic">
+                            No example quotes available
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
 
               {/* Aspect comparison table */}
               {allAspectNames.length > 0 && (
